@@ -137,7 +137,7 @@ function getCurrentCoordinates(): Promise<{ latitude: number; longitude: number 
           reject(new LocationCurrencyError("Could not read the device location.", "timeout"));
         }
       },
-      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 0 },
+      { enableHighAccuracy: false, timeout: 25_000, maximumAge: 5 * 60 * 1000 },
     );
   });
 }
