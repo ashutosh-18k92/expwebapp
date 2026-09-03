@@ -59,48 +59,67 @@ export const COUNTRY_CURRENCY: Record<string, string> = {
   ZA: "ZAR",
 };
 
-// Static placeholder rates, GBP 1 -> currency unit. NOT live market data.
-// Indicative only, for this pre-launch demo, and must be replaced with a
-// reviewed live-rate source (and compliance sign-off) before any
-// customer-facing use.
-export const PLACEHOLDER_GBP_RATES: Record<string, number> = {
-  GBP: 1,
-  EUR: 1.17,
-  CHF: 1.11,
-  SEK: 13.4,
-  NOK: 13.9,
-  DKK: 8.74,
-  PLN: 5.02,
-  CZK: 28.9,
-  HUF: 452,
-  RON: 5.93,
-  BGN: 2.29,
-  TRY: 53.6,
-  USD: 1.27,
-  CAD: 1.76,
-  MXN: 24.9,
-  BRL: 7.1,
-  AUD: 1.94,
-  NZD: 2.13,
-  JPY: 190,
-  CNY: 9.15,
-  HKD: 9.9,
-  SGD: 1.66,
-  THB: 43.5,
-  VND: 32300,
-  MYR: 5.6,
-  IDR: 20400,
-  PHP: 72.4,
-  KRW: 1770,
-  INR: 108,
-  AED: 4.66,
-  QAR: 4.63,
-  SAR: 4.76,
-  ILS: 4.6,
-  EGP: 62.5,
-  MAD: 12.6,
-  ZAR: 22.9,
-};
+// Currency codes selectable in the UI, derived from COUNTRY_CURRENCY.
+export const KNOWN_CURRENCIES: string[] = Array.from(new Set(Object.values(COUNTRY_CURRENCY))).sort();
+
+// Frankfurter serves the ECB's daily reference rates - free, keyless, no
+// rate limit for this kind of light client-side use. ECB doesn't publish
+// reference rates for every currency in COUNTRY_CURRENCY (notably several
+// Gulf/African/Vietnamese pegs) - resolveRate() below returns null for
+// those, and the UI shows the rate as unavailable rather than guessing.
+// Rates update once per weekday around 16:00 CET - this is a daily reference
+// rate, not an intraday/real-time feed.
+export interface LiveGbpRates {
+  rates: Record<string, number>;
+  asOfDate: string;
+  fetchedAt: number;
+}
+
+export async function fetchLiveGbpRates(): Promise<LiveGbpRates | null> {
+  try {
+    const response = await fetch("https://api.frankfurter.dev/v1/latest?from=GBP");
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (!data?.rates || typeof data.rates !== "object") return null;
+    return { rates: data.rates, asOfDate: data.date, fetchedAt: Date.now() };
+  } catch {
+    return null;
+  }
+}
+
+const RATES_STORAGE_KEY = "fog.liveGbpRates";
+const RATES_CACHE_TTL_MS = 60 * 60 * 1000;
+
+export function loadCachedLiveGbpRates(): LiveGbpRates | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(RATES_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as LiveGbpRates;
+    if (Date.now() - parsed.fetchedAt > RATES_CACHE_TTL_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLiveGbpRates(value: LiveGbpRates): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(RATES_STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // sessionStorage unavailable (e.g. private mode) - fail silently, caller keeps in-memory state.
+  }
+}
+
+// GBP-to-GBP is trivially 1 regardless of API state. Everything else needs
+// a live rate - returns null if the live-rate fetch failed entirely or the
+// feed doesn't cover this currency, and the UI treats both as unavailable.
+export function resolveRate(currencyCode: string, liveRates: LiveGbpRates | null): number | null {
+  if (currencyCode === "GBP") return 1;
+  const live = liveRates?.rates[currencyCode];
+  return typeof live === "number" ? live : null;
+}
 
 export interface DeviceLocationCurrency {
   countryCode: string;

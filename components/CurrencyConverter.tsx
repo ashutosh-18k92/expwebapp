@@ -1,36 +1,79 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { LocationPrimer } from "@/lib/native-permissions";
 import { LocationIcon, PermissionPrimer } from "@/components/PermissionPrimer";
 import {
   DeviceLocationCurrency,
+  KNOWN_CURRENCIES,
+  LiveGbpRates,
   LocationCurrencyError,
-  PLACEHOLDER_GBP_RATES,
+  fetchLiveGbpRates,
+  loadCachedLiveGbpRates,
   loadCachedLocationCurrency,
   resolveDeviceLocationCurrency,
+  resolveRate,
+  saveLiveGbpRates,
   saveLocationCurrency,
 } from "@/lib/location-currency";
 
 type Status = "idle" | "requesting-permission" | "detecting" | "resolved" | "error";
 
-const CURRENCY_CODES = Object.keys(PLACEHOLDER_GBP_RATES).sort();
-
 export function CurrencyConverter() {
   const [status, setStatus] = useState<Status>("idle");
-  const [location, setLocation] = useState<DeviceLocationCurrency | null>(() => loadCachedLocationCurrency());
-  const [currencyCode, setCurrencyCode] = useState<string>(() => loadCachedLocationCurrency()?.currencyCode ?? "EUR");
+  const [location, setLocation] = useState<DeviceLocationCurrency | null>(null);
+  const [currencyCode, setCurrencyCode] = useState<string>("EUR");
   const [amount, setAmount] = useState("100");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showPrimer, setShowPrimer] = useState(false);
+  const [liveRates, setLiveRates] = useState<LiveGbpRates | null>(null);
+  const [loadingRates, setLoadingRates] = useState(true);
 
-  const rate = PLACEHOLDER_GBP_RATES[currencyCode] ?? null;
+  // Cache reads (sessionStorage) must happen client-only, after mount - doing
+  // them in useState initializers instead runs them on the client's first
+  // render too, before it's had a chance to match the server-rendered (no
+  // sessionStorage) markup, which is a hydration mismatch.
+  useEffect(() => {
+    // One-time restore of client-only cached state on mount (see the comment
+    // above) - the resulting extra render pass is negligible for a form this
+    // size, so the synchronous setState calls here are intentional.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    const cachedLocation = loadCachedLocationCurrency();
+    if (cachedLocation) {
+      setLocation(cachedLocation);
+      setCurrencyCode(cachedLocation.currencyCode);
+    }
+
+    const cachedRates = loadCachedLiveGbpRates();
+    if (cachedRates) {
+      setLiveRates(cachedRates);
+      setLoadingRates(false);
+      return;
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+
+    let cancelled = false;
+    fetchLiveGbpRates().then((result) => {
+      if (cancelled) return;
+      if (result) {
+        saveLiveGbpRates(result);
+        setLiveRates(result);
+      }
+      setLoadingRates(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const rate = resolveRate(currencyCode, liveRates);
   const parsedAmount = Number(amount);
   const converted = useMemo(() => {
     if (rate === null || !Number.isFinite(parsedAmount)) return null;
     return parsedAmount * rate;
   }, [parsedAmount, rate]);
+  const rateUnavailable = currencyCode !== "GBP" && !loadingRates && rate === null;
 
   async function detectFromDevice() {
     setErrorMessage(null);
@@ -84,9 +127,10 @@ export function CurrencyConverter() {
       <div>
         <h2 className="text-lg font-bold">Currency converter (GBP)</h2>
         <p className="text-sm text-slate-600">
-          DRAFT - for illustration only. Uses a placeholder exchange rate, not a live market
-          rate, and not the rate applied to any premium, payment or refund. Requires compliance
-          review before any customer-facing use.
+          DRAFT - for illustration only. Rates are the latest available ECB daily reference rate;
+          shown as unavailable if that data cannot be retrieved for a currency. Not a real-time
+          market rate, and not the rate applied to any premium, payment or refund. Requires
+          compliance review before any customer-facing use.
         </p>
       </div>
 
@@ -125,7 +169,7 @@ export function CurrencyConverter() {
             onChange={(event) => setCurrencyCode(event.target.value)}
             className="mt-1 rounded-lg border border-slate-300 px-3 py-2"
           >
-            {CURRENCY_CODES.map((code) => (
+            {KNOWN_CURRENCIES.map((code) => (
               <option key={code} value={code}>
                 {code}
               </option>
@@ -135,10 +179,21 @@ export function CurrencyConverter() {
       </div>
 
       <p className="text-base">
-        {converted !== null
-          ? `£${parsedAmount.toFixed(2)} GBP is approximately ${converted.toFixed(2)} ${currencyCode}.`
-          : "Enter an amount to convert."}
+        {currencyCode !== "GBP" && loadingRates
+          ? "Fetching the latest exchange rate..."
+          : rateUnavailable
+            ? "Service unavailable - could not retrieve an exchange rate."
+            : converted !== null
+              ? `£${parsedAmount.toFixed(2)} GBP is approximately ${converted.toFixed(2)} ${currencyCode}.`
+              : "Enter an amount to convert."}
       </p>
+
+      {currencyCode === "GBP" && <p className="text-xs text-slate-500">Same currency - no conversion needed.</p>}
+      {currencyCode !== "GBP" && rate !== null && (
+        <p className="text-xs text-slate-500">
+          Rate: £1 = {rate} {currencyCode} (ECB daily reference rate{liveRates ? `, as of ${liveRates.asOfDate}` : ""}).
+        </p>
+      )}
 
       {showPrimer && (
         <PermissionPrimer
