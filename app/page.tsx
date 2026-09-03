@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { LocationPrimer, NotificationPrimer } from "@/lib/native-permissions";
 import { LocationIcon, NotificationIcon, PermissionPrimer } from "@/components/PermissionPrimer";
+import { CurrencyConverter } from "@/components/CurrencyConverter";
 
 type PrimerScreen = "location" | "notifications" | null;
 
@@ -40,13 +41,13 @@ export default function Home() {
 
   async function handleNotificationAllow() {
     const result = await NotificationPrimer.requestPermission();
-    setNotificationStatus(`Notifications: ${JSON.stringify(result)}`);
+    setNotificationStatus(`${JSON.stringify(result)}`);
     setActivePrimer(null);
   }
 
   async function handleLocationAllow() {
     const result = await LocationPrimer.requestPermission();
-    setLocationStatus(`Location: ${JSON.stringify(result)}`);
+    setLocationStatus(`${JSON.stringify(result)}`);
     setActivePrimer(null);
   }
 
@@ -81,6 +82,8 @@ export default function Home() {
         </button>
         <p>Location: {locationStatus}</p>
         <p>Notification: {notificationStatus}</p>
+
+        <CurrencyConverter />
       </main>
 
       {activePrimer === "notifications" && (
