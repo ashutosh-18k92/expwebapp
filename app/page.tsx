@@ -1,124 +1,61 @@
-"use client";
-
-import { useState } from "react";
-import { Capacitor } from "@capacitor/core";
-import { LocationPrimer, NotificationPrimer } from "@/lib/native-permissions";
-import { LocationIcon, NotificationIcon, PermissionPrimer } from "@/components/PermissionPrimer";
-import { CurrencyConverter } from "@/components/CurrencyConverter";
 import Link from "next/link";
+import { getCurrentUser } from "@/lib/auth/session";
+import { HomeDemo } from "@/components/HomeDemo";
 
-type PrimerScreen = "location" | "notifications" | null;
+function AccountIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#0284C7"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5"
+    >
+      <path d="M12,12m-4,0a4,4 0 1,0 8,0a4,4 0 1,0 -8,0" />
+      <path d="M4,20c0,-4.4 3.6,-8 8,-8s8,3.6 8,8" />
+    </svg>
+  );
+}
 
-export default function Home() {
-  const [locationStatus, setLocationStatus] = useState("Disallowed");
-  const [notificationStatus, setNotificationStatus] = useState("Disallowed");
-  const [activePrimer, setActivePrimer] = useState<PrimerScreen>(null);
-
-  async function handleNotificationsClick() {
-    if (!Capacitor.isNativePlatform()) {
-      setNotificationStatus("Not running inside the native app - no Capacitor bridge available.");
-      return;
-    }
-    const status = await NotificationPrimer.isNotificationGranted();
-    if (status.granted) {
-      setNotificationStatus(`Notifications: ${JSON.stringify({ granted: true, alreadyGranted: true })}`);
-      return;
-    }
-    setActivePrimer("notifications");
-  }
-
-  async function handleLocationClick() {
-    if (!Capacitor.isNativePlatform()) {
-      setLocationStatus("Not running inside the native app - no Capacitor bridge available.");
-      return;
-    }
-    const status = await LocationPrimer.isLocationGranted();
-    if (status.granted) {
-      setLocationStatus(`Location: ${JSON.stringify({ granted: true, alreadyGranted: true })}`);
-      return;
-    }
-    setActivePrimer("location");
-  }
-
-  async function handleNotificationAllow() {
-    const result = await NotificationPrimer.requestPermission();
-    setNotificationStatus(`${JSON.stringify(result)}`);
-    setActivePrimer(null);
-  }
-
-  async function handleLocationAllow() {
-    const result = await LocationPrimer.requestPermission();
-    setLocationStatus(`${JSON.stringify(result)}`);
-    setActivePrimer(null);
-  }
-
-  function handleNotificationDismiss() {
-    setNotificationStatus(`Notifications: ${JSON.stringify({ granted: false, dismissed: true })}`);
-    setActivePrimer(null);
-  }
-
-  function handleLocationDismiss() {
-    setLocationStatus(`Location: ${JSON.stringify({ granted: false, dismissed: true })}`);
-    setActivePrimer(null);
-  }
+export default async function Home() {
+  const user = await getCurrentUser();
 
   return (
     <div>
       <main className="flex flex-col gap-5">
+        {user ? (
+          <Link href="/dashboard" className="flex w-fit items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-[#BAE6FD] bg-[#E0F2FE]">
+              <AccountIcon />
+            </span>
+            <span className="text-sm font-medium">{user.email}</span>
+          </Link>
+        ) : (
+          <div className="flex gap-3">
+            <Link
+              href="/register"
+              className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Register
+            </Link>
+            <Link
+              href="/login"
+              className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Sign in
+            </Link>
+          </div>
+        )}
+
         <p>
           A placehoilder project for the fog-experience-web to test the synchronisation between the
           native envirionment and webapp.
         </p>
 
-        <div className="flex gap-3">
-          <a href="/register" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-            Register
-          </a>
-          <a href="/login" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-            Sign in
-          </a>
-        </div>
-
-        <button
-          onClick={handleNotificationsClick}
-          className="bg-green-600 text-white p-2.5 rounded-2xl transition-colors hover:bg-green-700 active:bg-green-800"
-        >
-          Allow Notifications
-        </button>
-        <button
-          onClick={handleLocationClick}
-          className="bg-green-600 text-white p-2.5 rounded-2xl transition-colors hover:bg-green-700 active:bg-green-800"
-        >
-          Allow Location
-        </button>
-        <p>Location: {locationStatus}</p>
-        <p>Notification: {notificationStatus}</p>
-
-        <CurrencyConverter />
+        <HomeDemo />
       </main>
-
-      {activePrimer === "notifications" && (
-        <PermissionPrimer
-          icon={<NotificationIcon />}
-          title="Turn on notifications"
-          description="Stay updated on claims progress, policy renewals, expiry reminders, and exclusive Bounce customer offers."
-          allowLabel="Enable Notifications"
-          onAllow={handleNotificationAllow}
-          onDismiss={handleNotificationDismiss}
-        />
-      )}
-
-      {activePrimer === "location" && (
-        <PermissionPrimer
-          icon={<LocationIcon />}
-          title="Enable location services"
-          description="Get personalised guides to restaurants, beaches, and special offers when you're abroad."
-          allowLabel="Allow Location Access"
-          onAllow={handleLocationAllow}
-          onDismiss={handleLocationDismiss}
-        />
-      )}
-      <Link className="underline text-white" href="/login">Login or register</Link>
     </div>
   );
 }

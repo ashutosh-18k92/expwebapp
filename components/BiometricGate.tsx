@@ -8,12 +8,21 @@ import { BiometricIcon } from "@/components/PermissionPrimer";
 
 type GateStatus = "checking" | "locked" | "unlocked" | "unsupported";
 
-export function BiometricGate({ children }: { children: React.ReactNode }) {
+export function BiometricGate({
+  enabled,
+  children,
+}: {
+  enabled: boolean;
+  children: React.ReactNode;
+}) {
   const router = useRouter();
-  const [status, setStatus] = useState<GateStatus>("checking");
+  const [status, setStatus] = useState<GateStatus>(enabled ? "checking" : "unsupported");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Initial state already accounts for `enabled` - nothing to do if it's off.
+    if (!enabled) return;
+
     let cancelled = false;
 
     async function checkAvailability() {
@@ -33,7 +42,7 @@ export function BiometricGate({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [enabled]);
 
   async function handleUnlock() {
     setError(null);
