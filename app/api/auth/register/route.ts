@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { db, type UserRow } from "@/lib/db";
+import { getDb } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
 
@@ -18,19 +18,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
   }
 
-  const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email) as
-    | UserRow
-    | undefined;
-  if (existing) {
+  const db = await getDb();
+
+  const existing = await db.execute({ sql: "SELECT id FROM users WHERE email = ?", args: [email] });
+  if (existing.rows.length > 0) {
     return NextResponse.json({ error: "An account with that email already exists." }, { status: 409 });
   }
 
   const { hash, salt } = hashPassword(password);
   const id = randomUUID();
 
-  db.prepare(
-    "INSERT INTO users (id, email, password_hash, password_salt, biometric_enabled, created_at) VALUES (?, ?, ?, ?, 0, ?)",
-  ).run(id, email, hash, salt, Date.now());
+  await db.execute({
+    sql: "INSERT INTO users (id, email, password_hash, password_salt, biometric_enabled, created_at) VALUES (?, ?, ?, ?, 0, ?)",
+    args: [id, email, hash, salt, Date.now()],
+  });
 
   await createSession(id);
 

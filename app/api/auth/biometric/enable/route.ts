@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDb } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/session";
 
 export async function POST() {
@@ -8,7 +8,8 @@ export async function POST() {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
 
-  db.prepare("UPDATE users SET biometric_enabled = 1 WHERE id = ?").run(user.id);
+  const db = await getDb();
+  await db.execute({ sql: "UPDATE users SET biometric_enabled = 1 WHERE id = ?", args: [user.id] });
 
   return NextResponse.json({ ok: true });
 }

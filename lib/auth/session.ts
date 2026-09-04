@@ -1,6 +1,6 @@
 import { randomBytes, createHash } from "node:crypto";
 import { cookies } from "next/headers";
-import { db, type UserRow } from "@/lib/db";
+import { getDb, type UserRow } from "@/lib/db";
 
 const SESSION_COOKIE = "fog_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -14,12 +14,11 @@ export async function createSession(userId: string): Promise<void> {
   const now = Date.now();
   const expiresAt = now + SESSION_TTL_SECONDS * 1000;
 
-  db.prepare("INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)").run(
-    hashToken(token),
-    userId,
-    expiresAt,
-    now,
-  );
+  const db = await getDb();
+  await db.execute({
+    sql: "INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
+    args: [hashToken(token), userId, expiresAt, now],
+  });
 
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, token, {
@@ -36,15 +35,22 @@ export async function getCurrentUser(): Promise<UserRow | null> {
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
 
-  const session = db
-    .prepare("SELECT * FROM sessions WHERE id = ?")
-    .get(hashToken(token)) as { user_id: string; expires_at: number } | undefined;
+  const db = await getDb();
+  const sessionResult = await db.execute({
+    sql: "SELECT user_id, expires_at FROM sessions WHERE id = ?",
+    args: [hashToken(token)],
+  });
+  const session = sessionResult.rows[0] as unknown as
+    | { user_id: string; expires_at: number }
+    | undefined;
 
   if (!session || session.expires_at < Date.now()) return null;
 
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(session.user_id) as
-    | UserRow
-    | undefined;
+  const userResult = await db.execute({
+    sql: "SELECT * FROM users WHERE id = ?",
+    args: [session.user_id],
+  });
+  const user = userResult.rows[0] as unknown as UserRow | undefined;
 
   return user ?? null;
 }
@@ -53,7 +59,8 @@ export async function destroySession(): Promise<void> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (token) {
-    db.prepare("DELETE FROM sessions WHERE id = ?").run(hashToken(token));
+    const db = await getDb();
+    await db.execute({ sql: "DELETE FROM sessions WHERE id = ?", args: [hashToken(token)] });
   }
   cookieStore.delete(SESSION_COOKIE);
 }
