@@ -15,7 +15,7 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold">You&apos;re signed in</h1>
         <p className="text-slate-700">Signed in as {user.email}.</p>
         <p className="text-sm text-slate-500">
-          Biometric sign-in: {user.biometric_enabled ? "enabled" : "not enabled"}.
+          Biometric sign-in: {user.biometricEnabled ? "enabled" : "not enabled"}.
         </p>
         <LogoutButton />
       </div>

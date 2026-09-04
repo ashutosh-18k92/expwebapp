@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type UserDoc } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/session";
 
 export async function POST() {
@@ -9,7 +9,9 @@ export async function POST() {
   }
 
   const db = await getDb();
-  await db.execute({ sql: "UPDATE users SET biometric_enabled = 1 WHERE id = ?", args: [user.id] });
+  await db
+    .collection<UserDoc>("users")
+    .updateOne({ _id: user._id }, { $set: { biometricEnabled: true } });
 
   return NextResponse.json({ ok: true });
 }

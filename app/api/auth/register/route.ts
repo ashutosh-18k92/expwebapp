@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { emailCollation, getDb, type UserDoc } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DUPLICATE_KEY_ERROR = 11000;
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
@@ -19,19 +20,31 @@ export async function POST(request: Request) {
   }
 
   const db = await getDb();
+  const users = db.collection<UserDoc>("users");
 
-  const existing = await db.execute({ sql: "SELECT id FROM users WHERE email = ?", args: [email] });
-  if (existing.rows.length > 0) {
+  const existing = await users.findOne({ email }, emailCollation());
+  if (existing) {
     return NextResponse.json({ error: "An account with that email already exists." }, { status: 409 });
   }
 
   const { hash, salt } = hashPassword(password);
   const id = randomUUID();
 
-  await db.execute({
-    sql: "INSERT INTO users (id, email, password_hash, password_salt, biometric_enabled, created_at) VALUES (?, ?, ?, ?, 0, ?)",
-    args: [id, email, hash, salt, Date.now()],
-  });
+  try {
+    await users.insertOne({
+      _id: id,
+      email,
+      passwordHash: hash,
+      passwordSalt: salt,
+      biometricEnabled: false,
+      createdAt: new Date(),
+    });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === DUPLICATE_KEY_ERROR) {
+      return NextResponse.json({ error: "An account with that email already exists." }, { status: 409 });
+    }
+    throw error;
+  }
 
   await createSession(id);
 

@@ -1,6 +1,6 @@
 import { randomBytes, createHash } from "node:crypto";
 import { cookies } from "next/headers";
-import { getDb, type UserRow } from "@/lib/db";
+import { getDb, type SessionDoc, type UserDoc } from "@/lib/db";
 
 const SESSION_COOKIE = "fog_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -11,13 +11,15 @@ function hashToken(token: string): string {
 
 export async function createSession(userId: string): Promise<void> {
   const token = randomBytes(32).toString("hex");
-  const now = Date.now();
-  const expiresAt = now + SESSION_TTL_SECONDS * 1000;
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000);
 
   const db = await getDb();
-  await db.execute({
-    sql: "INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
-    args: [hashToken(token), userId, expiresAt, now],
+  await db.collection<SessionDoc>("sessions").insertOne({
+    _id: hashToken(token),
+    userId,
+    expiresAt,
+    createdAt: now,
   });
 
   const cookieStore = await cookies();
@@ -30,28 +32,16 @@ export async function createSession(userId: string): Promise<void> {
   });
 }
 
-export async function getCurrentUser(): Promise<UserRow | null> {
+export async function getCurrentUser(): Promise<UserDoc | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
 
   const db = await getDb();
-  const sessionResult = await db.execute({
-    sql: "SELECT user_id, expires_at FROM sessions WHERE id = ?",
-    args: [hashToken(token)],
-  });
-  const session = sessionResult.rows[0] as unknown as
-    | { user_id: string; expires_at: number }
-    | undefined;
+  const session = await db.collection<SessionDoc>("sessions").findOne({ _id: hashToken(token) });
+  if (!session || session.expiresAt.getTime() < Date.now()) return null;
 
-  if (!session || session.expires_at < Date.now()) return null;
-
-  const userResult = await db.execute({
-    sql: "SELECT * FROM users WHERE id = ?",
-    args: [session.user_id],
-  });
-  const user = userResult.rows[0] as unknown as UserRow | undefined;
-
+  const user = await db.collection<UserDoc>("users").findOne({ _id: session.userId });
   return user ?? null;
 }
 
@@ -60,7 +50,7 @@ export async function destroySession(): Promise<void> {
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (token) {
     const db = await getDb();
-    await db.execute({ sql: "DELETE FROM sessions WHERE id = ?", args: [hashToken(token)] });
+    await db.collection<SessionDoc>("sessions").deleteOne({ _id: hashToken(token) });
   }
   cookieStore.delete(SESSION_COOKIE);
 }

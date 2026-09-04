@@ -1,59 +1,68 @@
-import { createClient, type Client } from "@libsql/client";
-import { mkdirSync } from "node:fs";
-import path from "node:path";
+import { MongoClient, ServerApiVersion, type Db } from "mongodb";
 
-const globalForDb = globalThis as unknown as { fogDb?: Client; fogDbSchema?: Promise<void> };
+const DB_NAME = process.env.MONGODB_DB_NAME || "fog_exp_webapp";
+const EMAIL_COLLATION = { locale: "en", strength: 2 } as const;
 
-function createDbClient(): Client {
-  const url = process.env.TURSO_DATABASE_URL;
-  if (url) {
-    return createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
+const globalForDb = globalThis as unknown as {
+  fogMongoClientPromise?: Promise<MongoClient>;
+  fogMongoIndexesReady?: Promise<void>;
+};
+
+function connect(): Promise<MongoClient> {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    throw new Error(
+      "MONGODB_URI is not set - add it to .env.local for local dev, or the deployment's environment variables.",
+    );
   }
-
-  // Local dev fallback: a plain SQLite file, no Turso account needed.
-  // Never used on Vercel - /var/task is read-only, so TURSO_DATABASE_URL
-  // must be set there.
-  const dataDir = path.join(process.cwd(), "data");
-  mkdirSync(dataDir, { recursive: true });
-  return createClient({ url: `file:${path.join(dataDir, "app.db")}` });
+  const client = new MongoClient(uri, {
+    serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
+  });
+  return client.connect();
 }
 
-export const db = globalForDb.fogDb ?? createDbClient();
-globalForDb.fogDb = db;
-
-function ensureSchema(): Promise<void> {
-  if (!globalForDb.fogDbSchema) {
-    globalForDb.fogDbSchema = db.executeMultiple(`
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-        password_hash TEXT NOT NULL,
-        password_salt TEXT NOT NULL,
-        biometric_enabled INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL REFERENCES users(id),
-        expires_at INTEGER NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-    `);
+function getClientPromise(): Promise<MongoClient> {
+  if (!globalForDb.fogMongoClientPromise) {
+    globalForDb.fogMongoClientPromise = connect();
   }
-  return globalForDb.fogDbSchema;
+  return globalForDb.fogMongoClientPromise;
 }
 
-export async function getDb(): Promise<Client> {
-  await ensureSchema();
+async function ensureIndexes(db: Db): Promise<void> {
+  await Promise.all([
+    db
+      .collection("users")
+      .createIndex({ email: 1 }, { unique: true, collation: EMAIL_COLLATION }),
+    db.collection("sessions").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+  ]);
+}
+
+export async function getDb(): Promise<Db> {
+  const client = await getClientPromise();
+  const db = client.db(DB_NAME);
+  if (!globalForDb.fogMongoIndexesReady) {
+    globalForDb.fogMongoIndexesReady = ensureIndexes(db);
+  }
+  await globalForDb.fogMongoIndexesReady;
   return db;
 }
 
-export interface UserRow {
-  id: string;
+export function emailCollation() {
+  return { collation: EMAIL_COLLATION };
+}
+
+export interface UserDoc {
+  _id: string;
   email: string;
-  password_hash: string;
-  password_salt: string;
-  biometric_enabled: number;
-  created_at: number;
+  passwordHash: string;
+  passwordSalt: string;
+  biometricEnabled: boolean;
+  createdAt: Date;
+}
+
+export interface SessionDoc {
+  _id: string;
+  userId: string;
+  expiresAt: Date;
+  createdAt: Date;
 }

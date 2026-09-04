@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb, type UserRow } from "@/lib/db";
+import { emailCollation, getDb, type UserDoc } from "@/lib/db";
 import { verifyPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
 
@@ -9,14 +9,13 @@ export async function POST(request: Request) {
   const password = typeof body?.password === "string" ? body.password : "";
 
   const db = await getDb();
-  const result = await db.execute({ sql: "SELECT * FROM users WHERE email = ?", args: [email] });
-  const user = result.rows[0] as unknown as UserRow | undefined;
+  const user = await db.collection<UserDoc>("users").findOne({ email }, emailCollation());
 
-  if (!user || !verifyPassword(password, user.password_hash, user.password_salt)) {
+  if (!user || !verifyPassword(password, user.passwordHash, user.passwordSalt)) {
     return NextResponse.json({ error: "Incorrect email or password." }, { status: 401 });
   }
 
-  await createSession(user.id);
+  await createSession(user._id);
 
   return NextResponse.json({ ok: true });
 }
