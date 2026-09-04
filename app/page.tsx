@@ -5,6 +5,7 @@ import { Capacitor } from "@capacitor/core";
 import { LocationPrimer, NotificationPrimer } from "@/lib/native-permissions";
 import { LocationIcon, NotificationIcon, PermissionPrimer } from "@/components/PermissionPrimer";
 import { CurrencyConverter } from "@/components/CurrencyConverter";
+import Link from "next/link";
 
 type PrimerScreen = "location" | "notifications" | null;
 
@@ -68,6 +69,16 @@ export default function Home() {
           A placehoilder project for the fog-experience-web to test the synchronisation between the
           native envirionment and webapp.
         </p>
+
+        <div className="flex gap-3">
+          <a href="/register" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+            Register
+          </a>
+          <a href="/login" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+            Sign in
+          </a>
+        </div>
+
         <button
           onClick={handleNotificationsClick}
           className="bg-green-600 text-white p-2.5 rounded-2xl transition-colors hover:bg-green-700 active:bg-green-800"
@@ -107,6 +118,7 @@ export default function Home() {
           onDismiss={handleLocationDismiss}
         />
       )}
+      <Link className="underline text-white" href="/login">Login or register</Link>
     </div>
   );
 }

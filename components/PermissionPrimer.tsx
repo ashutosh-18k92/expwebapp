@@ -58,6 +58,26 @@ export function LocationIcon() {
   );
 }
 
+export function BiometricIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#0284C7"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-11 w-11"
+    >
+      <path d="M12,4 C8.13,4 5,7.13 5,11 L5,13 C5,16.5 3,18.5 3,18.5" />
+      <path d="M12,4 C15.87,4 19,7.13 19,11 L19,13" />
+      <path d="M8,11 C8,8.79 9.79,7 12,7 C14.21,7 16,8.79 16,11 L16,14 C16,17 14,19 14,19" />
+      <path d="M12,11 L12,14 C12,17.5 9.5,19.5 9.5,19.5" />
+      <path d="M15.5,17 C15.5,17 16,15.5 16,14" />
+    </svg>
+  );
+}
+
 export function NotificationIcon() {
   return (
     <svg

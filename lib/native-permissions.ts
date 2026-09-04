@@ -24,5 +24,21 @@ interface NotificationPrimerPlugin {
   isNotificationGranted(): Promise<{ granted: boolean }>;
 }
 
+export interface BiometricAvailabilityResult {
+  available: boolean;
+  reason?: string;
+}
+
+export interface BiometricAuthenticateResult {
+  success: boolean;
+  error?: string;
+}
+
+interface BiometricPrimerPlugin {
+  isAvailable(): Promise<BiometricAvailabilityResult>;
+  authenticate(options: { title: string; subtitle?: string }): Promise<BiometricAuthenticateResult>;
+}
+
 export const LocationPrimer = registerPlugin<LocationPrimerPlugin>("LocationPrimer");
 export const NotificationPrimer = registerPlugin<NotificationPrimerPlugin>("NotificationPrimer");
+export const BiometricPrimer = registerPlugin<BiometricPrimerPlugin>("BiometricPrimer");

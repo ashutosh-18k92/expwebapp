@@ -30,15 +30,7 @@ export function CurrencyConverter() {
   const [liveRates, setLiveRates] = useState<LiveGbpRates | null>(null);
   const [loadingRates, setLoadingRates] = useState(true);
 
-  // Cache reads (sessionStorage) must happen client-only, after mount - doing
-  // them in useState initializers instead runs them on the client's first
-  // render too, before it's had a chance to match the server-rendered (no
-  // sessionStorage) markup, which is a hydration mismatch.
   useEffect(() => {
-    // One-time restore of client-only cached state on mount (see the comment
-    // above) - the resulting extra render pass is negligible for a form this
-    // size, so the synchronous setState calls here are intentional.
-    /* eslint-disable react-hooks/set-state-in-effect */
     const cachedLocation = loadCachedLocationCurrency();
     if (cachedLocation) {
       setLocation(cachedLocation);
@@ -170,7 +162,10 @@ export function CurrencyConverter() {
             className="mt-1 rounded-lg border border-slate-300 px-3 py-2"
           >
             {KNOWN_CURRENCIES.map((code) => (
-              <option key={code} value={code}>
+              <option
+                key={code}
+                value={code}
+              >
                 {code}
               </option>
             ))}
@@ -188,10 +183,13 @@ export function CurrencyConverter() {
               : "Enter an amount to convert."}
       </p>
 
-      {currencyCode === "GBP" && <p className="text-xs text-slate-500">Same currency - no conversion needed.</p>}
+      {currencyCode === "GBP" && (
+        <p className="text-xs text-slate-500">Same currency - no conversion needed.</p>
+      )}
       {currencyCode !== "GBP" && rate !== null && (
         <p className="text-xs text-slate-500">
-          Rate: £1 = {rate} {currencyCode} (ECB daily reference rate{liveRates ? `, as of ${liveRates.asOfDate}` : ""}).
+          Rate: £1 = {rate} {currencyCode} (ECB daily reference rate
+          {liveRates ? `, as of ${liveRates.asOfDate}` : ""}).
         </p>
       )}
 
