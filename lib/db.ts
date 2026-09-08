@@ -51,12 +51,19 @@ export function emailCollation() {
   return { collation: EMAIL_COLLATION };
 }
 
+export interface NotificationTopicPreferences {
+  essentials: boolean;
+  promotions: boolean;
+  feeds: boolean;
+}
+
 export interface UserDoc {
   _id: string;
   email: string;
   passwordHash: string;
   passwordSalt: string;
   biometricEnabled: boolean;
+  notificationTopics: NotificationTopicPreferences;
   createdAt: Date;
 }
 

@@ -39,6 +39,26 @@ interface BiometricPrimerPlugin {
   authenticate(options: { title: string; subtitle?: string }): Promise<BiometricAuthenticateResult>;
 }
 
+/**
+ * Categories a user can opt into from Settings. The plugin only ever takes a
+ * category, never a topic string: the native side builds the real FCM topic
+ * as this install's own brand_id plus the category (see
+ * NotificationTopicsPlugin in fog-mobile-app), so the web side never needs
+ * to know or choose which brand's topic it's touching.
+ */
+export const NOTIFICATION_CATEGORIES = ["essentials", "promotions", "feeds"] as const;
+export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
+
+export interface TopicSubscriptionResult {
+  subscribed: boolean;
+}
+
+interface NotificationTopicsPlugin {
+  subscribe(options: { category: NotificationCategory }): Promise<TopicSubscriptionResult>;
+  unsubscribe(options: { category: NotificationCategory }): Promise<TopicSubscriptionResult>;
+}
+
 export const LocationPrimer = registerPlugin<LocationPrimerPlugin>("LocationPrimer");
 export const NotificationPrimer = registerPlugin<NotificationPrimerPlugin>("NotificationPrimer");
 export const BiometricPrimer = registerPlugin<BiometricPrimerPlugin>("BiometricPrimer");
+export const NotificationTopics = registerPlugin<NotificationTopicsPlugin>("NotificationTopics");

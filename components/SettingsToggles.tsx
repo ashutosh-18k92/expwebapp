@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
-import { BiometricPrimer, LocationPrimer, NotificationPrimer } from "@/lib/native-permissions";
+import {
+  BiometricPrimer,
+  LocationPrimer,
+  NotificationPrimer,
+  NotificationTopics,
+  NOTIFICATION_CATEGORIES,
+  type NotificationCategory,
+} from "@/lib/native-permissions";
 import {
   BiometricIcon,
   LocationIcon,
@@ -13,13 +20,26 @@ import { Toggle } from "@/components/Toggle";
 
 type PrimerScreen = "location" | "notifications" | "biometrics" | null;
 
-export function SettingsToggles({ biometricEnabledInitial }: { biometricEnabledInitial: boolean }) {
+export interface NotificationTopicPreferences {
+  essentials: boolean;
+  promotions: boolean;
+  feeds: boolean;
+}
+
+export function SettingsToggles({
+  biometricEnabledInitial,
+  notificationTopicsInitial,
+}: {
+  biometricEnabledInitial: boolean;
+  notificationTopicsInitial: NotificationTopicPreferences;
+}) {
   const isNative = Capacitor.isNativePlatform();
 
   const [locationGranted, setLocationGranted] = useState(false);
   const [notificationGranted, setNotificationGranted] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(biometricEnabledInitial);
+  const [topics, setTopics] = useState(notificationTopicsInitial);
   const [activePrimer, setActivePrimer] = useState<PrimerScreen>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,7 +51,21 @@ export function SettingsToggles({ biometricEnabledInitial }: { biometricEnabledI
       if (!cancelled) setLocationGranted(result.granted);
     });
     NotificationPrimer.isNotificationGranted().then((result) => {
-      if (!cancelled) setNotificationGranted(result.granted);
+      if (cancelled) return;
+      setNotificationGranted(result.granted);
+      // Reconcile device subscription state to the persisted preference
+      // every time Settings mounts - FCM has no on-device query API for
+      // current subscriptions, and subscribe/unsubscribe are idempotent, so
+      // this is the mechanism that actually applies a default (e.g.
+      // Essentials on by default for a new user) on the device.
+      if (result.granted) {
+        for (const category of NOTIFICATION_CATEGORIES) {
+          const method = notificationTopicsInitial[category] ? "subscribe" : "unsubscribe";
+          NotificationTopics[method]({ category }).catch(() => {
+            // Best-effort sync; the toggle itself will retry on next mount.
+          });
+        }
+      }
     });
     BiometricPrimer.isAvailable()
       .then((result) => {
@@ -44,7 +78,7 @@ export function SettingsToggles({ biometricEnabledInitial }: { biometricEnabledI
     return () => {
       cancelled = true;
     };
-  }, [isNative]);
+  }, [isNative, notificationTopicsInitial]);
 
   function closePrimer() {
     setActivePrimer(null);
@@ -78,6 +112,26 @@ export function SettingsToggles({ biometricEnabledInitial }: { biometricEnabledI
     const result = await NotificationPrimer.requestPermission();
     setNotificationGranted(result.granted);
     setActivePrimer(null);
+  }
+
+  async function handleTopicToggle(category: NotificationCategory, next: boolean) {
+    setError(null);
+    try {
+      await NotificationTopics[next ? "subscribe" : "unsubscribe"]({ category });
+    } catch {
+      setError("Couldn't update that notification setting. Try again.");
+      return;
+    }
+    const response = await fetch("/api/notifications/topics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category, enabled: next }),
+    });
+    if (response.ok) {
+      setTopics((prev) => ({ ...prev, [category]: next }));
+    } else {
+      setError("Couldn't save that notification setting. Try again.");
+    }
   }
 
   async function handleBiometricAllow() {
@@ -118,6 +172,45 @@ export function SettingsToggles({ biometricEnabledInitial }: { biometricEnabledI
         checked={locationGranted}
         disabled={!isNative || locationGranted}
         onChange={handleLocationToggle}
+      />
+      {/*
+        Captions below are customer-facing copy - DRAFT, needs Compliance
+        sign-off before ship (financial promotion under FOGIL's FCA
+        authorisation), particularly Promotions/Feeds which are
+        marketing-adjacent.
+      */}
+      <Toggle
+        label="Essentials"
+        caption={
+          !isNative || !notificationGranted
+            ? "Turn on notifications above first."
+            : "Claims updates, policy and renewal reminders."
+        }
+        checked={topics.essentials}
+        disabled={!isNative || !notificationGranted}
+        onChange={(next) => handleTopicToggle("essentials", next)}
+      />
+      <Toggle
+        label="Promotions"
+        caption={
+          !isNative || !notificationGranted
+            ? "Turn on notifications above first."
+            : "Offers and marketing updates."
+        }
+        checked={topics.promotions}
+        disabled={!isNative || !notificationGranted}
+        onChange={(next) => handleTopicToggle("promotions", next)}
+      />
+      <Toggle
+        label="Feeds"
+        caption={
+          !isNative || !notificationGranted
+            ? "Turn on notifications above first."
+            : "Travel tips and destination content."
+        }
+        checked={topics.feeds}
+        disabled={!isNative || !notificationGranted}
+        onChange={(next) => handleTopicToggle("feeds", next)}
       />
       <Toggle
         label="Biometric sign-in"

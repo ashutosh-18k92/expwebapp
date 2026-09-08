@@ -37,6 +37,7 @@ export async function POST(request: Request) {
       passwordHash: hash,
       passwordSalt: salt,
       biometricEnabled: false,
+      notificationTopics: { essentials: true, promotions: false, feeds: false },
       createdAt: new Date(),
     });
   } catch (error) {
