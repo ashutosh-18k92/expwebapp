@@ -7,9 +7,9 @@ import {
   LocationPrimer,
   NotificationPrimer,
   NotificationTopics,
-  NOTIFICATION_CATEGORIES,
   type NotificationCategory,
 } from "@/lib/native-permissions";
+import { reconcileNotificationTopics } from "@/lib/reconcile-notification-topics";
 import {
   BiometricIcon,
   LocationIcon,
@@ -54,18 +54,11 @@ export function SettingsToggles({
       if (cancelled) return;
       setNotificationGranted(result.granted);
       // Reconcile device subscription state to the persisted preference
-      // every time Settings mounts - FCM has no on-device query API for
-      // current subscriptions, and subscribe/unsubscribe are idempotent, so
-      // this is the mechanism that actually applies a default (e.g.
-      // Essentials on by default for a new user) on the device.
-      if (result.granted) {
-        for (const category of NOTIFICATION_CATEGORIES) {
-          const method = notificationTopicsInitial[category] ? "subscribe" : "unsubscribe";
-          NotificationTopics[method]({ category }).catch(() => {
-            // Best-effort sync; the toggle itself will retry on next mount.
-          });
-        }
-      }
+      // every time Settings mounts, same as on sign-in (see
+      // components/TopicSync.tsx) - this is the mechanism that actually
+      // applies a default (e.g. Essentials on by default for a new user) on
+      // the device, and re-applies it if this mount raced sign-in's own.
+      reconcileNotificationTopics(notificationTopicsInitial);
     });
     BiometricPrimer.isAvailable()
       .then((result) => {
