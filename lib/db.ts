@@ -34,6 +34,9 @@ async function ensureIndexes(db: Db): Promise<void> {
       .collection("users")
       .createIndex({ email: 1 }, { unique: true, collation: EMAIL_COLLATION }),
     db.collection("sessions").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    db.collection("journeys").createIndex({ userId: 1, journeyDate: 1 }),
+    db.collection("journeys").createIndex({ journeyDate: 1, reminderSentAt: 1 }),
+    db.collection("notifications").createIndex({ userId: 1, createdAt: -1 }),
   ]);
 }
 
@@ -65,11 +68,37 @@ export interface UserDoc {
   biometricEnabled: boolean;
   notificationTopics: NotificationTopicPreferences;
   createdAt: Date;
+  // Latest Android FCM registration token, used to target this user with a
+  // single-device push (see /api/notifications/device-token and
+  // fog-push-notification-service's journey-reminder job). One token per
+  // user, not per-device - a user signed in on two devices only gets pushes
+  // on whichever registered most recently.
+  fcmToken?: string | null;
+  fcmTokenUpdatedAt?: Date | null;
 }
 
 export interface SessionDoc {
   _id: string;
   userId: string;
   expiresAt: Date;
+  createdAt: Date;
+}
+
+export interface JourneyDoc {
+  _id: string;
+  userId: string;
+  journeyDate: Date;
+  createdAt: Date;
+  // Set once the 14-day-out reminder has been sent for this journey, so the
+  // reminder job never double-sends. See fog-push-notification-service's
+  // journey-reminder job.
+  reminderSentAt: Date | null;
+}
+
+export interface NotificationDoc {
+  _id: string;
+  userId: string;
+  title: string;
+  body: string;
   createdAt: Date;
 }

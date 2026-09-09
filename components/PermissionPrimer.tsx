@@ -78,7 +78,7 @@ export function BiometricIcon() {
   );
 }
 
-export function NotificationIcon() {
+export function NotificationIcon({ className = "h-11 w-11" }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -87,7 +87,7 @@ export function NotificationIcon() {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="h-11 w-11"
+      className={className}
     >
       <path d="M18,8 A6,6 0 0,0 6,8 C6,15 3,17 3,17 L21,17 C21,17 18,15 18,8 Z" />
       <path d="M13.73,21 A2,2 0 0,1 10.27,21" />

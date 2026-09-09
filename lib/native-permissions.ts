@@ -58,7 +58,16 @@ interface NotificationTopicsPlugin {
   unsubscribe(options: { category: NotificationCategory }): Promise<TopicSubscriptionResult>;
 }
 
+export interface PushTokenResult {
+  token: string | null;
+}
+
+interface PushTokenPlugin {
+  getToken(): Promise<PushTokenResult>;
+}
+
 export const LocationPrimer = registerPlugin<LocationPrimerPlugin>("LocationPrimer");
 export const NotificationPrimer = registerPlugin<NotificationPrimerPlugin>("NotificationPrimer");
 export const BiometricPrimer = registerPlugin<BiometricPrimerPlugin>("BiometricPrimer");
 export const NotificationTopics = registerPlugin<NotificationTopicsPlugin>("NotificationTopics");
+export const PushToken = registerPlugin<PushTokenPlugin>("PushToken");
