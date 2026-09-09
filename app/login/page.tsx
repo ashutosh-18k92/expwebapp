@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Input } from "@/components/ui/input";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,23 +39,21 @@ export default function LoginPage() {
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm font-medium">
           Email
-          <input
+          <Input
             type="email"
             required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2"
           />
         </label>
 
         <label className="flex flex-col gap-1 text-sm font-medium">
           Password
-          <input
+          <Input
             type="password"
             required
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2"
           />
         </label>
 

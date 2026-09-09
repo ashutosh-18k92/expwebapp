@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Input } from "@/components/ui/input";
 
 interface JourneyItem {
   _id: string;
@@ -67,21 +68,11 @@ export function JourneyForm() {
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-sm font-semibold text-slate-700">
           Journey date
-          <input
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+          <Input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-sm font-semibold text-slate-700">
           Departure time
-          <input
-            type="time"
-            value={time}
-            onChange={(event) => setTime(event.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+          <Input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
         </label>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button

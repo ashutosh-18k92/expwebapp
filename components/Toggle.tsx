@@ -1,5 +1,7 @@
 "use client";
 
+import { Switch } from "@/components/ui/switch";
+
 export function Toggle({
   label,
   caption,
@@ -19,23 +21,7 @@ export function Toggle({
         <p className="text-sm font-medium">{label}</p>
         {caption && <p className="text-xs text-slate-500">{caption}</p>}
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
-          checked ? "bg-green-600" : "bg-slate-700"
-        } ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
-      >
-        <span
-          className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-transform ${
-            checked ? "translate-x-6" : "translate-x-1"
-          }`}
-        />
-      </button>
+      <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} aria-label={label} />
     </div>
   );
 }

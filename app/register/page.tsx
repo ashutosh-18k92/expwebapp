@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
 import { BiometricPrimer } from "@/lib/native-permissions";
 import { BiometricIcon, PermissionPrimer } from "@/components/PermissionPrimer";
+import { Input } from "@/components/ui/input";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -75,24 +76,22 @@ export default function RegisterPage() {
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm font-medium">
           Email
-          <input
+          <Input
             type="email"
             required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2"
           />
         </label>
 
         <label className="flex flex-col gap-1 text-sm font-medium">
           Password
-          <input
+          <Input
             type="password"
             required
             minLength={8}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2"
           />
         </label>
 

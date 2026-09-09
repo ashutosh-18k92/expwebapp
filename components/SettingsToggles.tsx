@@ -105,6 +105,13 @@ export function SettingsToggles({
     const result = await NotificationPrimer.requestPermission();
     setNotificationGranted(result.granted);
     setActivePrimer(null);
+    // The mount-time reconcile in the effect above ran before permission was
+    // granted and no-opped - this is the first point the device is actually
+    // able to hold FCM subscriptions, so apply the persisted preference now
+    // rather than waiting for a future mount to catch up.
+    if (result.granted) {
+      reconcileNotificationTopics(topics);
+    }
   }
 
   async function handleTopicToggle(category: NotificationCategory, next: boolean) {
@@ -153,6 +160,34 @@ export function SettingsToggles({
         disabled={!isNative || notificationGranted}
         onChange={handleNotificationToggle}
       />
+      {/*
+        Captions below are customer-facing copy - DRAFT, needs Compliance
+        sign-off before ship (financial promotion under FOGIL's FCA
+        authorisation), particularly Promotions/Feeds which are
+        marketing-adjacent.
+      */}
+      {isNative && notificationGranted && (
+        <div className="ml-6 flex flex-col border-l border-slate-800 pl-4">
+          <Toggle
+            label="Essentials"
+            caption="Claims updates, policy and renewal reminders."
+            checked={topics.essentials}
+            onChange={(next) => handleTopicToggle("essentials", next)}
+          />
+          <Toggle
+            label="Promotions"
+            caption="Offers and marketing updates."
+            checked={topics.promotions}
+            onChange={(next) => handleTopicToggle("promotions", next)}
+          />
+          <Toggle
+            label="Feeds"
+            caption="Travel tips and destination content."
+            checked={topics.feeds}
+            onChange={(next) => handleTopicToggle("feeds", next)}
+          />
+        </div>
+      )}
       <Toggle
         label="Location"
         caption={
@@ -165,45 +200,6 @@ export function SettingsToggles({
         checked={locationGranted}
         disabled={!isNative || locationGranted}
         onChange={handleLocationToggle}
-      />
-      {/*
-        Captions below are customer-facing copy - DRAFT, needs Compliance
-        sign-off before ship (financial promotion under FOGIL's FCA
-        authorisation), particularly Promotions/Feeds which are
-        marketing-adjacent.
-      */}
-      <Toggle
-        label="Essentials"
-        caption={
-          !isNative || !notificationGranted
-            ? "Turn on notifications above first."
-            : "Claims updates, policy and renewal reminders."
-        }
-        checked={topics.essentials}
-        disabled={!isNative || !notificationGranted}
-        onChange={(next) => handleTopicToggle("essentials", next)}
-      />
-      <Toggle
-        label="Promotions"
-        caption={
-          !isNative || !notificationGranted
-            ? "Turn on notifications above first."
-            : "Offers and marketing updates."
-        }
-        checked={topics.promotions}
-        disabled={!isNative || !notificationGranted}
-        onChange={(next) => handleTopicToggle("promotions", next)}
-      />
-      <Toggle
-        label="Feeds"
-        caption={
-          !isNative || !notificationGranted
-            ? "Turn on notifications above first."
-            : "Travel tips and destination content."
-        }
-        checked={topics.feeds}
-        disabled={!isNative || !notificationGranted}
-        onChange={(next) => handleTopicToggle("feeds", next)}
       />
       <Toggle
         label="Biometric sign-in"

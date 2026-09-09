@@ -1,5 +1,7 @@
 "use client";
 
+import { Fingerprint, MapPin, Bell } from "lucide-react";
+
 interface PermissionPrimerProps {
   icon: React.ReactNode;
   title: string;
@@ -41,56 +43,14 @@ export function PermissionPrimer({
   );
 }
 
-export function LocationIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="#0284C7"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-11 w-11"
-    >
-      <path d="M12,21.5 C12,21.5 19,15.2 19,10 C19,6.134 15.866,3 12,3 C8.134,3 5,6.134 5,10 C5,15.2 12,21.5 12,21.5 Z" />
-      <path d="M12,10m-3,0a3,3 0 1,0 6,0a3,3 0 1,0 -6,0" />
-    </svg>
-  );
+export function LocationIcon({ className = "h-11 w-11" }: { className?: string }) {
+  return <MapPin color="#0284C7" strokeWidth={2} className={className} />;
 }
 
-export function BiometricIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="#0284C7"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-11 w-11"
-    >
-      <path d="M12,4 C8.13,4 5,7.13 5,11 L5,13 C5,16.5 3,18.5 3,18.5" />
-      <path d="M12,4 C15.87,4 19,7.13 19,11 L19,13" />
-      <path d="M8,11 C8,8.79 9.79,7 12,7 C14.21,7 16,8.79 16,11 L16,14 C16,17 14,19 14,19" />
-      <path d="M12,11 L12,14 C12,17.5 9.5,19.5 9.5,19.5" />
-      <path d="M15.5,17 C15.5,17 16,15.5 16,14" />
-    </svg>
-  );
+export function BiometricIcon({ className = "h-11 w-11" }: { className?: string }) {
+  return <Fingerprint color="#0284C7" strokeWidth={2} className={className} />;
 }
 
 export function NotificationIcon({ className = "h-11 w-11" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="#0284C7"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M18,8 A6,6 0 0,0 6,8 C6,15 3,17 3,17 L21,17 C21,17 18,15 18,8 Z" />
-      <path d="M13.73,21 A2,2 0 0,1 10.27,21" />
-    </svg>
-  );
+  return <Bell color="#0284C7" strokeWidth={2} className={className} />;
 }

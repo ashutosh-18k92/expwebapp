@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
+import { Settings, User, ArrowLeftRight, Plane } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
-import { LogoutButton } from "@/components/LogoutButton";
 import { NotificationBell } from "@/components/NotificationBell";
 import { DeviceTokenSync } from "@/components/DeviceTokenSync";
 import { TopicSync } from "@/components/TopicSync";
+import { DashboardCard } from "@/components/DashboardCard";
 
 // Defensive default for a user doc predating notificationTopics.
 const DEFAULT_NOTIFICATION_TOPICS = { essentials: true, promotions: false, feeds: false };
@@ -20,17 +20,36 @@ export default async function DashboardPage() {
       <DeviceTokenSync />
       <TopicSync notificationTopics={user.notificationTopics ?? DEFAULT_NOTIFICATION_TOPICS} />
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">You&apos;re signed in</h1>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
         <NotificationBell />
       </div>
-      <p className="text-slate-700">Signed in as {user.email}.</p>
-      <p className="text-sm text-slate-500">
-        Biometric sign-in: {user.biometricEnabled ? "enabled" : "not enabled"}.
-      </p>
-      <Link href="/journeys" className="text-sm font-semibold text-sky-700 underline">
-        Manage your journeys
-      </Link>
-      <LogoutButton />
+
+      <div className="flex flex-col gap-3">
+        <DashboardCard
+          href="/settings"
+          icon={<Settings className="h-5 w-5 text-[#0284C7]" />}
+          title="Settings"
+          description="Notifications, biometrics and more."
+        />
+        <DashboardCard
+          href="/account"
+          icon={<User className="h-5 w-5 text-[#0284C7]" />}
+          title="User account"
+          description={user.email}
+        />
+        <DashboardCard
+          href="/currency-converter"
+          icon={<ArrowLeftRight className="h-5 w-5 text-[#0284C7]" />}
+          title="Currency converter"
+          description="Convert GBP to your local currency."
+        />
+        <DashboardCard
+          href="/journeys"
+          icon={<Plane className="h-5 w-5 text-[#0284C7]" />}
+          title="Manage journeys"
+          description="Schedule and view your upcoming trips."
+        />
+      </div>
     </div>
   );
 }

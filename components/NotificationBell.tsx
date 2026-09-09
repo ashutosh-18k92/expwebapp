@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { NotificationIcon } from "@/components/PermissionPrimer";
 
 interface NotificationItem {
@@ -96,9 +97,9 @@ export function NotificationBell() {
                   <button
                     onClick={() => handleDismiss(item._id)}
                     aria-label="Dismiss"
-                    className="text-xs font-semibold text-slate-400 hover:text-slate-700"
+                    className="text-slate-400 hover:text-slate-700"
                   >
-                    ✕
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
               </li>
