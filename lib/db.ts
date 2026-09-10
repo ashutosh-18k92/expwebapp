@@ -1,6 +1,6 @@
 import { MongoClient, ServerApiVersion, type Db } from "mongodb";
 
-const DB_NAME = process.env.MONGODB_DB_NAME || "fog_exp_webapp";
+const DB_NAME = process.env.MONGODB_DB_NAME || "exp_webapp";
 const EMAIL_COLLATION = { locale: "en", strength: 2 } as const;
 
 const globalForDb = globalThis as unknown as {
@@ -37,6 +37,7 @@ async function ensureIndexes(db: Db): Promise<void> {
     db.collection("journeys").createIndex({ userId: 1, journeyDate: 1 }),
     db.collection("journeys").createIndex({ journeyDate: 1, reminderSentAt: 1 }),
     db.collection("notifications").createIndex({ userId: 1, createdAt: -1 }),
+    db.collection("devices").createIndex({ userId: 1 }),
   ]);
 }
 
@@ -68,13 +69,6 @@ export interface UserDoc {
   biometricEnabled: boolean;
   notificationTopics: NotificationTopicPreferences;
   createdAt: Date;
-  // Latest Android FCM registration token, used to target this user with a
-  // single-device push (see /api/notifications/device-token and
-  // fog-push-notification-service's journey-reminder job). One token per
-  // user, not per-device - a user signed in on two devices only gets pushes
-  // on whichever registered most recently.
-  fcmToken?: string | null;
-  fcmTokenUpdatedAt?: Date | null;
 }
 
 export interface SessionDoc {
@@ -84,14 +78,22 @@ export interface SessionDoc {
   createdAt: Date;
 }
 
+export interface DeviceDoc {
+  _id: string; // the FCM/web-push token itself - re-registering the same
+  // token is an upsert, never a duplicate.
+  userId: string;
+  platform: "native" | "web";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface JourneyDoc {
   _id: string;
   userId: string;
   journeyDate: Date;
   createdAt: Date;
-  // Set once the 14-day-out reminder has been sent for this journey, so the
-  // reminder job never double-sends. See fog-push-notification-service's
-  // journey-reminder job.
+  // Set once reminder has been sent for this journey, so the
+  // reminder job never double-sends.
   reminderSentAt: Date | null;
 }
 

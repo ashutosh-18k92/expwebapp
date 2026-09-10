@@ -2,27 +2,29 @@
 
 import { useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
-import { PushToken } from "@/lib/native-permissions";
+import { getStrategies } from "@/lib/permission-strategies";
 
 /**
- * No UI. Registers this device's current FCM token against the signed-in
- * user once per mount, so fog-push-notification-service can target this
- * user directly (see /api/notifications/device-token). Android only - the
- * plugin simply doesn't exist on web/iOS builds, and getToken() there would
- * never resolve a real token anyway.
+ * No UI. Registers this device's current push token (native FCM, or a web
+ * push token once NEXT_PUBLIC_FIREBASE_VAPID_KEY is configured - see
+ * lib/firebase-web.ts) against the signed-in user once per mount, so
+ * fog-push-notification-service can target this user directly on any of
+ * their devices (see /api/notifications/device-token and the `devices`
+ * collection in lib/db.ts).
  */
 export function DeviceTokenSync() {
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
     let cancelled = false;
+    const isNative = Capacitor.isNativePlatform();
 
-    PushToken.getToken()
-      .then((result) => {
-        if (cancelled || !result.token) return;
+    getStrategies(isNative)
+      .notification.getDeviceToken()
+      .then((token) => {
+        if (cancelled || !token) return;
         return fetch("/api/notifications/device-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: result.token }),
+          body: JSON.stringify({ token, platform: isNative ? "native" : "web" }),
         });
       })
       .catch(() => {

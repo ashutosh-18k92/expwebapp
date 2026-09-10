@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb, type UserDoc } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { NOTIFICATION_CATEGORIES, type NotificationCategory } from "@/lib/native-permissions";
+import { reconcileWebDevicesForCategory } from "@/lib/notification-topics-admin";
 
 function isNotificationCategory(value: unknown): value is NotificationCategory {
   return typeof value === "string" && (NOTIFICATION_CATEGORIES as readonly string[]).includes(value);
@@ -31,6 +32,12 @@ export async function POST(request: Request) {
   await db
     .collection<UserDoc>("users")
     .updateOne({ _id: user._id }, { $set: { [`notificationTopics.${category}`]: enabled } });
+
+  // Native subscribes/unsubscribes itself client-side (see
+  // NotificationTopics in lib/native-permissions.ts) - this only ever
+  // touches this account's web devices, which have no client-side
+  // equivalent.
+  await reconcileWebDevicesForCategory(user._id, category, enabled);
 
   return NextResponse.json({ ok: true });
 }

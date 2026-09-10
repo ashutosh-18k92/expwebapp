@@ -2,14 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
-import {
-  BiometricPrimer,
-  LocationPrimer,
-  NotificationPrimer,
-  NotificationTopics,
-  type NotificationCategory,
-} from "@/lib/native-permissions";
+import { BiometricPrimer, NotificationTopics, type NotificationCategory } from "@/lib/native-permissions";
 import { reconcileNotificationTopics } from "@/lib/reconcile-notification-topics";
+import { getStrategies } from "@/lib/permission-strategies";
 import {
   BiometricIcon,
   LocationIcon,
@@ -29,11 +24,17 @@ export interface NotificationTopicPreferences {
 export function SettingsToggles({
   biometricEnabledInitial,
   notificationTopicsInitial,
+  isNativeInitial,
 }: {
   biometricEnabledInitial: boolean;
   notificationTopicsInitial: NotificationTopicPreferences;
+  isNativeInitial: boolean;
 }) {
-  const isNative = Capacitor.isNativePlatform();
+  // Seeded from the server (the fog_native_client cookie) to avoid an
+  // SSR/hydration flash, then corrected below from Capacitor's own check -
+  // covers a plain (non-Capacitor) mobile browser, where that cookie was
+  // never set.
+  const [isNative, setIsNative] = useState(isNativeInitial);
 
   const [locationGranted, setLocationGranted] = useState(false);
   const [notificationGranted, setNotificationGranted] = useState(false);
@@ -44,34 +45,43 @@ export function SettingsToggles({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isNative) return;
     let cancelled = false;
+    // Computed fresh from Capacitor rather than read from the `isNative`
+    // state, so this corrects a mismatch with the server-seeded prop (e.g.
+    // a plain, non-Capacitor mobile browser, where the fog_native_client
+    // cookie was never set) without needing a separate effect just to patch
+    // that state up.
+    const actual = Capacitor.isNativePlatform();
+    const strategies = getStrategies(actual);
 
-    LocationPrimer.isLocationGranted().then((result) => {
-      if (!cancelled) setLocationGranted(result.granted);
+    strategies.location.isGranted().then((granted) => {
+      if (!cancelled) setLocationGranted(granted);
     });
-    NotificationPrimer.isNotificationGranted().then((result) => {
+    strategies.notification.isGranted().then((granted) => {
       if (cancelled) return;
-      setNotificationGranted(result.granted);
-      // Reconcile device subscription state to the persisted preference
-      // every time Settings mounts, same as on sign-in (see
-      // components/TopicSync.tsx) - this is the mechanism that actually
-      // applies a default (e.g. Essentials on by default for a new user) on
-      // the device, and re-applies it if this mount raced sign-in's own.
-      reconcileNotificationTopics(notificationTopicsInitial);
+      setNotificationGranted(granted);
+      setIsNative((prev) => (prev === actual ? prev : actual));
+      // Native self-manages its own FCM topic subscriptions on every mount
+      // (see reconcile-notification-topics.ts); a web device has no
+      // client-side subscribeToTopic API, so its reconciliation happens
+      // server-side instead - see /api/notifications/topics and
+      // /api/notifications/device-token.
+      if (actual) reconcileNotificationTopics(notificationTopicsInitial);
     });
-    BiometricPrimer.isAvailable()
-      .then((result) => {
-        if (!cancelled) setBiometricAvailable(result.available);
-      })
-      .catch(() => {
-        if (!cancelled) setBiometricAvailable(false);
-      });
+    if (actual) {
+      BiometricPrimer.isAvailable()
+        .then((result) => {
+          if (!cancelled) setBiometricAvailable(result.available);
+        })
+        .catch(() => {
+          if (!cancelled) setBiometricAvailable(false);
+        });
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [isNative, notificationTopicsInitial]);
+  }, [notificationTopicsInitial]);
 
   function closePrimer() {
     setActivePrimer(null);
@@ -96,32 +106,37 @@ export function SettingsToggles({
   }
 
   async function handleLocationAllow() {
-    const result = await LocationPrimer.requestPermission();
-    setLocationGranted(result.granted);
+    const granted = await getStrategies(isNative).location.requestPermission();
+    setLocationGranted(granted);
     setActivePrimer(null);
   }
 
   async function handleNotificationAllow() {
-    const result = await NotificationPrimer.requestPermission();
-    setNotificationGranted(result.granted);
+    const granted = await getStrategies(isNative).notification.requestPermission();
+    setNotificationGranted(granted);
     setActivePrimer(null);
     // The mount-time reconcile in the effect above ran before permission was
     // granted and no-opped - this is the first point the device is actually
     // able to hold FCM subscriptions, so apply the persisted preference now
-    // rather than waiting for a future mount to catch up.
-    if (result.granted) {
+    // rather than waiting for a future mount to catch up. Native only - see
+    // the comment in the mount effect above.
+    if (granted && isNative) {
       reconcileNotificationTopics(topics);
     }
   }
 
   async function handleTopicToggle(category: NotificationCategory, next: boolean) {
     setError(null);
-    try {
-      await NotificationTopics[next ? "subscribe" : "unsubscribe"]({ category });
-    } catch {
-      setError("Couldn't update that notification setting. Try again.");
-      return;
+    if (isNative) {
+      try {
+        await NotificationTopics[next ? "subscribe" : "unsubscribe"]({ category });
+      } catch {
+        setError("Couldn't update that notification setting. Try again.");
+        return;
+      }
     }
+    // For a web device, the actual FCM (un)subscription happens server-side
+    // as part of this call - see /api/notifications/topics.
     const response = await fetch("/api/notifications/topics", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -150,14 +165,12 @@ export function SettingsToggles({
       <Toggle
         label="Notifications"
         caption={
-          !isNative
-            ? "Not available - open this in the FOG app."
-            : notificationGranted
-              ? "Managed in your device settings."
-              : "Get updates on claims, renewals and offers."
+          notificationGranted
+            ? "Managed in your device settings."
+            : "Get updates on claims, renewals and offers."
         }
         checked={notificationGranted}
-        disabled={!isNative || notificationGranted}
+        disabled={notificationGranted}
         onChange={handleNotificationToggle}
       />
       {/*
@@ -166,7 +179,7 @@ export function SettingsToggles({
         authorisation), particularly Promotions/Feeds which are
         marketing-adjacent.
       */}
-      {isNative && notificationGranted && (
+      {notificationGranted && (
         <div className="ml-6 flex flex-col border-l border-slate-800 pl-4">
           <Toggle
             label="Essentials"
@@ -191,14 +204,10 @@ export function SettingsToggles({
       <Toggle
         label="Location"
         caption={
-          !isNative
-            ? "Not available - open this in the FOG app."
-            : locationGranted
-              ? "Managed in your device settings."
-              : "Personalised guides and offers when you're abroad."
+          locationGranted ? "Managed in your device settings." : "Personalised guides and offers when you're abroad."
         }
         checked={locationGranted}
-        disabled={!isNative || locationGranted}
+        disabled={locationGranted}
         onChange={handleLocationToggle}
       />
       <Toggle

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isNativeClient } from "@/lib/platform";
 import { SettingsToggles } from "@/components/SettingsToggles";
 
 // Defensive default for a user doc predating notificationTopics.
@@ -10,6 +11,7 @@ export default async function SettingsPage() {
   if (!user) {
     redirect("/login");
   }
+  const isNativeInitial = await isNativeClient();
 
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-5 p-6">
@@ -17,6 +19,7 @@ export default async function SettingsPage() {
       <SettingsToggles
         biometricEnabledInitial={user.biometricEnabled}
         notificationTopicsInitial={user.notificationTopics ?? DEFAULT_NOTIFICATION_TOPICS}
+        isNativeInitial={isNativeInitial}
       />
     </div>
   );
