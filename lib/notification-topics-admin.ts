@@ -12,9 +12,9 @@ initFirebaseAdmin();
  * unsubscribe themselves on-device and are never touched by this - only
  * `platform: "web"` devices are looked up.
  *
- * Brand comes from this deployment's own NEXT_PUBLIC_BRAND_ID (see
- * lib/brand.ts) - every user in this database belongs to the same brand, so
- * it's never looked up per-user.
+ * Brand comes from this deployment's own BRAND_ID (see lib/brand.ts) - every
+ * user in this database belongs to the same brand, so it's never looked up
+ * per-user.
  */
 export async function reconcileWebDevicesForCategory(
   userId: string,
@@ -22,7 +22,7 @@ export async function reconcileWebDevicesForCategory(
   subscribed: boolean,
 ): Promise<void> {
   if (!BRAND_ID) {
-    console.warn("reconcileWebDevicesForCategory: NEXT_PUBLIC_BRAND_ID is not set, skipping");
+    console.warn("reconcileWebDevicesForCategory: BRAND_ID is not set, skipping");
     return;
   }
 
