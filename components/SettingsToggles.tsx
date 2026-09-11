@@ -12,6 +12,7 @@ import {
   PermissionPrimer,
 } from "@/components/PermissionPrimer";
 import { Toggle } from "@/components/Toggle";
+import { Input } from "@/components/ui/input";
 
 type PrimerScreen = "location" | "notifications" | "biometrics" | null;
 
@@ -21,13 +22,21 @@ export interface NotificationTopicPreferences {
   feeds: boolean;
 }
 
+export interface QuietHoursPreference {
+  enabled: boolean;
+  startTime: string; // "HH:mm"
+  endTime: string; // "HH:mm"
+}
+
 export function SettingsToggles({
   biometricEnabledInitial,
   notificationTopicsInitial,
+  quietHoursInitial,
   isNativeInitial,
 }: {
   biometricEnabledInitial: boolean;
   notificationTopicsInitial: NotificationTopicPreferences;
+  quietHoursInitial: QuietHoursPreference;
   isNativeInitial: boolean;
 }) {
   // Seeded from the server (the fog_native_client cookie) to avoid an
@@ -41,6 +50,8 @@ export function SettingsToggles({
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(biometricEnabledInitial);
   const [topics, setTopics] = useState(notificationTopicsInitial);
+  const [quietHours, setQuietHours] = useState(quietHoursInitial);
+  const [detectedTimeZone, setDetectedTimeZone] = useState<string | null>(null);
   const [activePrimer, setActivePrimer] = useState<PrimerScreen>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,6 +88,20 @@ export function SettingsToggles({
           if (!cancelled) setBiometricAvailable(false);
         });
     }
+
+    // Deferred to a microtask (rather than called synchronously here) to
+    // match this effect's existing async-setState convention. Purely for
+    // display - see the "Times shown in ..." caption below - the value
+    // actually persisted to the account is synced separately, on every
+    // dashboard mount, by components/TimeZoneSync.tsx.
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      try {
+        setDetectedTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || null);
+      } catch {
+        setDetectedTimeZone(null);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -161,6 +186,29 @@ export function SettingsToggles({
     }
   }
 
+  async function saveQuietHours(next: QuietHoursPreference) {
+    setError(null);
+    const response = await fetch("/api/notifications/quiet-hours", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next),
+    });
+    if (response.ok) {
+      setQuietHours(next);
+    } else {
+      setError("Couldn't save that notification setting. Try again.");
+    }
+  }
+
+  function handleQuietHoursToggle(next: boolean) {
+    saveQuietHours({ ...quietHours, enabled: next });
+  }
+
+  function handleQuietHoursTimeChange(field: "startTime" | "endTime", value: string) {
+    if (!value) return;
+    saveQuietHours({ ...quietHours, [field]: value });
+  }
+
   async function handleBiometricAllow() {
     const result = await BiometricPrimer.authenticate({ title: "Confirm it's you" });
     setActivePrimer(null);
@@ -189,7 +237,14 @@ export function SettingsToggles({
         Captions below are customer-facing copy - DRAFT, needs Compliance
         sign-off before ship (financial promotion under FOGIL's FCA
         authorisation), particularly Promotions/Feeds which are
-        marketing-adjacent.
+        marketing-adjacent. This also covers the Quiet hours copy further
+        below - it's scheduling UX rather than marketing content, but is
+        still customer-facing text needing sign-off before use. Its wording
+        deliberately says "reminder notifications", not "notifications" -
+        quiet hours only gates the per-user journey-reminder push, not the
+        Promotions/Feeds broadcasts above, which are sent to every
+        subscribed device in one topic-wide call with no way to hold back
+        an individual recipient's copy.
       */}
       {notificationGranted && (
         <div className="ml-6 flex flex-col border-l border-slate-800 pl-4">
@@ -211,6 +266,33 @@ export function SettingsToggles({
             checked={topics.feeds}
             onChange={(next) => handleTopicToggle("feeds", next)}
           />
+        </div>
+      )}
+      <Toggle
+        label="Quiet hours"
+        caption="Pause reminder notifications during set hours, every day."
+        checked={quietHours.enabled}
+        onChange={handleQuietHoursToggle}
+      />
+      {quietHours.enabled && (
+        <div className="ml-6 flex flex-col gap-3 border-l border-slate-800 py-3 pl-4">
+          <label className="flex flex-col gap-1 text-sm font-semibold text-slate-700">
+            Starts
+            <Input
+              type="time"
+              value={quietHours.startTime}
+              onChange={(event) => handleQuietHoursTimeChange("startTime", event.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-semibold text-slate-700">
+            Ends
+            <Input
+              type="time"
+              value={quietHours.endTime}
+              onChange={(event) => handleQuietHoursTimeChange("endTime", event.target.value)}
+            />
+          </label>
+          {detectedTimeZone && <p className="text-xs text-slate-400">Times shown in {detectedTimeZone}.</p>}
         </div>
       )}
       <Toggle

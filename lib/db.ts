@@ -61,6 +61,13 @@ export interface NotificationTopicPreferences {
   feeds: boolean;
 }
 
+export interface QuietHoursSettings {
+  enabled: boolean;
+  startTime: string; // "HH:mm", local wall-clock
+  endTime: string; // "HH:mm"; numerically before startTime means an
+  // overnight window (e.g. 22:00 -> 07:00)
+}
+
 export interface UserDoc {
   _id: string;
   email: string;
@@ -68,6 +75,11 @@ export interface UserDoc {
   passwordSalt: string;
   biometricEnabled: boolean;
   notificationTopics: NotificationTopicPreferences;
+  quietHours?: QuietHoursSettings;
+  // IANA identifier, e.g. "Europe/London" - kept current by a client-side
+  // sync on every app open (see components/TimeZoneSync.tsx), independent
+  // of whether quietHours is enabled.
+  timeZone?: string;
   createdAt: Date;
 }
 

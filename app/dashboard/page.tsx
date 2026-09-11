@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { NotificationBell } from "@/components/NotificationBell";
 import { DeviceTokenSync } from "@/components/DeviceTokenSync";
 import { TopicSync } from "@/components/TopicSync";
+import { TimeZoneSync } from "@/components/TimeZoneSync";
 import { DashboardCard } from "@/components/DashboardCard";
 
 // Defensive default for a user doc predating notificationTopics.
@@ -19,6 +20,7 @@ export default async function DashboardPage() {
     <div className="mx-auto flex w-full max-w-sm flex-col gap-5 p-6">
       <DeviceTokenSync />
       <TopicSync notificationTopics={user.notificationTopics ?? DEFAULT_NOTIFICATION_TOPICS} />
+      <TimeZoneSync />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <NotificationBell />

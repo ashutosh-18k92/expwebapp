@@ -5,6 +5,9 @@ import { SettingsToggles } from "@/components/SettingsToggles";
 
 // Defensive default for a user doc predating notificationTopics.
 const DEFAULT_NOTIFICATION_TOPICS = { essentials: true, promotions: false, feeds: false };
+// Defensive default for a user doc predating quietHours - off, with a
+// sensible overnight window pre-filled for whenever it's turned on.
+const DEFAULT_QUIET_HOURS = { enabled: false, startTime: "22:00", endTime: "07:00" };
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
@@ -19,6 +22,7 @@ export default async function SettingsPage() {
       <SettingsToggles
         biometricEnabledInitial={user.biometricEnabled}
         notificationTopicsInitial={user.notificationTopics ?? DEFAULT_NOTIFICATION_TOPICS}
+        quietHoursInitial={user.quietHours ?? DEFAULT_QUIET_HOURS}
         isNativeInitial={isNativeInitial}
       />
     </div>
