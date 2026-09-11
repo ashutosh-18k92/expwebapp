@@ -112,15 +112,27 @@ export function SettingsToggles({
   }
 
   async function handleNotificationAllow() {
+    setError(null);
     const granted = await getStrategies(isNative).notification.requestPermission();
     setNotificationGranted(granted);
     setActivePrimer(null);
+
+    if (!granted) {
+      // requestPermission() resolves "denied" both when the user just
+      // clicked Block AND when the browser already had this origin blocked
+      // from before - in the latter case there's no dialog at all, so
+      // without this the modal just silently closes with no explanation.
+      setError(
+        "Notification permission wasn't granted. If your browser didn't show a prompt, notifications may already be blocked for this site - check your browser's site settings.",
+      );
+      return;
+    }
     // The mount-time reconcile in the effect above ran before permission was
     // granted and no-opped - this is the first point the device is actually
     // able to hold FCM subscriptions, so apply the persisted preference now
     // rather than waiting for a future mount to catch up. Native only - see
     // the comment in the mount effect above.
-    if (granted && isNative) {
+    if (isNative) {
       reconcileNotificationTopics(topics);
     }
   }
