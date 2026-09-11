@@ -1,5 +1,5 @@
 import { getApps, initializeApp } from "firebase/app";
-import { getMessaging, getToken, isSupported } from "firebase/messaging";
+import { getMessaging, getToken, isSupported, onMessage } from "firebase/messaging";
 
 // Public web app config - safe to embed in client bundles, same values as
 // public/firebase-messaging-sw.js. Not a secret; see lib/firebase-admin.ts
@@ -44,4 +44,27 @@ export async function getWebPushToken(): Promise<string | null> {
     console.warn("getWebPushToken: failed to obtain a token", error);
     return null;
   }
+}
+
+/**
+ * Foreground counterpart to the service worker's onBackgroundMessage in
+ * public/firebase-messaging-sw.js. FCM only auto-displays a notification
+ * push via the service worker when this tab is out of focus - while it's
+ * focused, the SDK instead hands the message to this callback and displays
+ * nothing itself, so without wiring this up a push sent while the app is
+ * open in a browser tab is silently dropped. Returns a no-op unsubscribe if
+ * messaging isn't supported (e.g. Safari, or an unconfigured VAPID key).
+ */
+export async function onForegroundMessage(
+  callback: (payload: { title: string; body: string }) => void,
+): Promise<() => void> {
+  if (!process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || !(await isSupported())) return () => {};
+
+  const messaging = getMessaging(getFirebaseApp());
+  return onMessage(messaging, (payload) => {
+    callback({
+      title: payload.notification?.title ?? "Notification",
+      body: payload.notification?.body ?? "",
+    });
+  });
 }
