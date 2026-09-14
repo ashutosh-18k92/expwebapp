@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
 import { BiometricPrimer } from "@/lib/native-permissions";
 import { BiometricIcon } from "@/components/PermissionPrimer";
+import { useBiometricGateStore } from "@/lib/biometric-gate-store";
 
 type GateStatus = "checking" | "locked" | "unlocked" | "unsupported";
 
@@ -16,12 +17,25 @@ export function BiometricGate({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const [status, setStatus] = useState<GateStatus>(enabled ? "checking" : "unsupported");
+  const unlockedThisSession = useBiometricGateStore((state) => state.unlockedThisSession);
+  const markUnlocked = useBiometricGateStore((state) => state.markUnlocked);
+  const resetUnlocked = useBiometricGateStore((state) => state.reset);
+
+  // `/` (this gate's only mount point) re-mounts BiometricGate on every
+  // navigation back to it, which used to reset this to "checking" and
+  // re-prompt every time even seconds after the user last unlocked -
+  // unlockedThisSession lives in a module-level store instead of component
+  // state, so it survives that remount for as long as the app stays open.
+  const [status, setStatus] = useState<GateStatus>(() => {
+    if (!enabled) return "unsupported";
+    return unlockedThisSession ? "unlocked" : "checking";
+  });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Initial state already accounts for `enabled` - nothing to do if it's off.
-    if (!enabled) return;
+    // Initial state already accounts for `enabled`/unlockedThisSession -
+    // nothing to (re-)check if either says so.
+    if (!enabled || unlockedThisSession) return;
 
     let cancelled = false;
 
@@ -42,13 +56,14 @@ export function BiometricGate({
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, unlockedThisSession]);
 
   async function handleUnlock() {
     setError(null);
     try {
       const result = await BiometricPrimer.authenticate({ title: "Confirm it's you" });
       if (result.success) {
+        markUnlocked();
         setStatus("unlocked");
       } else {
         setError(result.error ?? "Biometric check did not succeed.");
@@ -59,6 +74,9 @@ export function BiometricGate({
   }
 
   async function handleLogOut() {
+    // A different account may sign in next on this device/session - it
+    // must not inherit this unlock.
+    resetUnlocked();
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
   }

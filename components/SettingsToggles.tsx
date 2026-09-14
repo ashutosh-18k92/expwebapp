@@ -6,6 +6,7 @@ import { BiometricPrimer, NotificationTopics, type NotificationCategory } from "
 import { reconcileNotificationTopics } from "@/lib/reconcile-notification-topics";
 import { getStrategies } from "@/lib/permission-strategies";
 import { readSettingsCache, writeSettingsCache } from "@/lib/settings-cache";
+import { flushPendingSettingsWrites, writeSettingOptimistically } from "@/lib/settings-sync";
 import {
   BiometricIcon,
   LocationIcon,
@@ -79,7 +80,11 @@ export function SettingsToggles({
       if (cached?.notificationGranted !== undefined) setNotificationGranted(cached.notificationGranted);
       if (actual && cached?.biometricAvailable !== undefined) setBiometricAvailable(cached.biometricAvailable);
     });
-    writeSettingsCache({ biometricEnabled: biometricEnabledInitial });
+    writeSettingsCache({ biometricEnabled: biometricEnabledInitial, quietHours: quietHoursInitial });
+    // Retry any optimistic write (see lib/settings-sync.ts) that didn't get
+    // confirmed before this page was last left - e.g. the app closed right
+    // after a toggle, before its POST got a response.
+    flushPendingSettingsWrites();
 
     strategies.location.isGranted().then((granted) => {
       if (cancelled) return;
@@ -127,7 +132,7 @@ export function SettingsToggles({
     return () => {
       cancelled = true;
     };
-  }, [notificationTopicsInitial, biometricEnabledInitial]);
+  }, [notificationTopicsInitial, biometricEnabledInitial, quietHoursInitial]);
 
   function closePrimer() {
     setActivePrimer(null);
@@ -147,11 +152,14 @@ export function SettingsToggles({
       setActivePrimer("biometrics");
       return;
     }
-    const response = await fetch("/api/auth/biometric/disable", { method: "POST" });
-    if (response.ok) {
-      setBiometricEnabled(false);
-      writeSettingsCache({ biometricEnabled: false });
-    }
+    // Optimistic: reflect this immediately and persist in the background -
+    // see lib/settings-sync.ts. Survives navigating away before the request
+    // completes; an unconfirmed write is retried on the next mount here or
+    // on the dashboard.
+    setBiometricEnabled(false);
+    writeSettingsCache({ biometricEnabled: false });
+    const ok = await writeSettingOptimistically("biometric", "/api/auth/biometric/disable", {});
+    if (!ok) setError("Couldn't save that setting - we'll keep retrying.");
   }
 
   async function handleLocationAllow() {
@@ -196,32 +204,26 @@ export function SettingsToggles({
         return;
       }
     }
-    // For a web device, the actual FCM (un)subscription happens server-side
-    // as part of this call - see /api/notifications/topics.
-    const response = await fetch("/api/notifications/topics", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ category, enabled: next }),
+    // Optimistic from here: reflect the change immediately, then persist in
+    // the background - see lib/settings-sync.ts. For a web device, the
+    // actual FCM (un)subscription happens server-side as part of that POST
+    // - see /api/notifications/topics.
+    setTopics((prev) => ({ ...prev, [category]: next }));
+    const ok = await writeSettingOptimistically(`topic:${category}`, "/api/notifications/topics", {
+      category,
+      enabled: next,
     });
-    if (response.ok) {
-      setTopics((prev) => ({ ...prev, [category]: next }));
-    } else {
-      setError("Couldn't save that notification setting. Try again.");
-    }
+    if (!ok) setError("Couldn't save that notification setting - we'll keep retrying.");
   }
 
   async function saveQuietHours(next: QuietHoursPreference) {
     setError(null);
-    const response = await fetch("/api/notifications/quiet-hours", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(next),
-    });
-    if (response.ok) {
-      setQuietHours(next);
-    } else {
-      setError("Couldn't save that notification setting. Try again.");
-    }
+    // Optimistic: reflect this immediately and persist in the background -
+    // see lib/settings-sync.ts.
+    setQuietHours(next);
+    writeSettingsCache({ quietHours: next });
+    const ok = await writeSettingOptimistically("quiet-hours", "/api/notifications/quiet-hours", { ...next });
+    if (!ok) setError("Couldn't save that notification setting - we'll keep retrying.");
   }
 
   function handleQuietHoursToggle(next: boolean) {
@@ -240,11 +242,13 @@ export function SettingsToggles({
       setError(result.error ?? "Biometric check did not succeed.");
       return;
     }
-    const response = await fetch("/api/auth/biometric/enable", { method: "POST" });
-    if (response.ok) {
-      setBiometricEnabled(true);
-      writeSettingsCache({ biometricEnabled: true });
-    }
+    // The hardware authentication above has to be awaited (there's no way
+    // to turn this on before it succeeds), but from here on it's optimistic
+    // the same as everywhere else - see lib/settings-sync.ts.
+    setBiometricEnabled(true);
+    writeSettingsCache({ biometricEnabled: true });
+    const ok = await writeSettingOptimistically("biometric", "/api/auth/biometric/enable", {});
+    if (!ok) setError("Couldn't save that setting - we'll keep retrying.");
   }
 
   return (

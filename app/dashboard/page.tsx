@@ -5,6 +5,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { DeviceTokenSync } from "@/components/DeviceTokenSync";
 import { TopicSync } from "@/components/TopicSync";
 import { TimeZoneSync } from "@/components/TimeZoneSync";
+import { SettingsSync } from "@/components/SettingsSync";
 import { DashboardCard } from "@/components/DashboardCard";
 
 // Defensive default for a user doc predating notificationTopics.
@@ -21,6 +22,7 @@ export default async function DashboardPage() {
       <DeviceTokenSync />
       <TopicSync notificationTopics={user.notificationTopics ?? DEFAULT_NOTIFICATION_TOPICS} />
       <TimeZoneSync />
+      <SettingsSync />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <NotificationBell />

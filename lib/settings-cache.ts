@@ -1,3 +1,5 @@
+import type { QuietHoursPreference } from "@/components/SettingsToggles";
+
 const CACHE_KEY = "fog:settings-cache:v1";
 
 export interface CachedSettingsState {
@@ -5,6 +7,7 @@ export interface CachedSettingsState {
   biometricAvailable: boolean;
   locationGranted: boolean;
   notificationGranted: boolean;
+  quietHours: QuietHoursPreference;
 }
 
 /**
