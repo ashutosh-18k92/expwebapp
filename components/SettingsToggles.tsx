@@ -5,6 +5,7 @@ import { Capacitor } from "@capacitor/core";
 import { BiometricPrimer, NotificationTopics, type NotificationCategory } from "@/lib/native-permissions";
 import { reconcileNotificationTopics } from "@/lib/reconcile-notification-topics";
 import { getStrategies } from "@/lib/permission-strategies";
+import { readSettingsCache, writeSettingsCache } from "@/lib/settings-cache";
 import {
   BiometricIcon,
   LocationIcon,
@@ -65,12 +66,30 @@ export function SettingsToggles({
     const actual = Capacitor.isNativePlatform();
     const strategies = getStrategies(actual);
 
+    // Seed location/notification/biometric-availability from the on-device
+    // cache immediately, so these toggles don't flash "off" while the real
+    // checks below are still resolving - each is corrected the moment its
+    // real check resolves, a few lines down. biometricEnabled isn't seeded
+    // here: it's already synchronously correct from the server-provided
+    // prop above, and a stale cached value could only make it wrong.
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      const cached = readSettingsCache();
+      if (cached?.locationGranted !== undefined) setLocationGranted(cached.locationGranted);
+      if (cached?.notificationGranted !== undefined) setNotificationGranted(cached.notificationGranted);
+      if (actual && cached?.biometricAvailable !== undefined) setBiometricAvailable(cached.biometricAvailable);
+    });
+    writeSettingsCache({ biometricEnabled: biometricEnabledInitial });
+
     strategies.location.isGranted().then((granted) => {
-      if (!cancelled) setLocationGranted(granted);
+      if (cancelled) return;
+      setLocationGranted(granted);
+      writeSettingsCache({ locationGranted: granted });
     });
     strategies.notification.isGranted().then((granted) => {
       if (cancelled) return;
       setNotificationGranted(granted);
+      writeSettingsCache({ notificationGranted: granted });
       setIsNative((prev) => (prev === actual ? prev : actual));
       // Native self-manages its own FCM topic subscriptions on every mount
       // (see reconcile-notification-topics.ts); a web device has no
@@ -82,7 +101,9 @@ export function SettingsToggles({
     if (actual) {
       BiometricPrimer.isAvailable()
         .then((result) => {
-          if (!cancelled) setBiometricAvailable(result.available);
+          if (cancelled) return;
+          setBiometricAvailable(result.available);
+          writeSettingsCache({ biometricAvailable: result.available });
         })
         .catch(() => {
           if (!cancelled) setBiometricAvailable(false);
@@ -106,7 +127,7 @@ export function SettingsToggles({
     return () => {
       cancelled = true;
     };
-  }, [notificationTopicsInitial]);
+  }, [notificationTopicsInitial, biometricEnabledInitial]);
 
   function closePrimer() {
     setActivePrimer(null);
@@ -127,7 +148,10 @@ export function SettingsToggles({
       return;
     }
     const response = await fetch("/api/auth/biometric/disable", { method: "POST" });
-    if (response.ok) setBiometricEnabled(false);
+    if (response.ok) {
+      setBiometricEnabled(false);
+      writeSettingsCache({ biometricEnabled: false });
+    }
   }
 
   async function handleLocationAllow() {
@@ -217,7 +241,10 @@ export function SettingsToggles({
       return;
     }
     const response = await fetch("/api/auth/biometric/enable", { method: "POST" });
-    if (response.ok) setBiometricEnabled(true);
+    if (response.ok) {
+      setBiometricEnabled(true);
+      writeSettingsCache({ biometricEnabled: true });
+    }
   }
 
   return (
