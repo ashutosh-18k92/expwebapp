@@ -7,6 +7,7 @@ import { reconcileNotificationTopics } from "@/lib/reconcile-notification-topics
 import { getStrategies } from "@/lib/permission-strategies";
 import { readSettingsCache, writeSettingsCache } from "@/lib/settings-cache";
 import { flushPendingSettingsWrites, writeSettingOptimistically } from "@/lib/settings-sync";
+import { syncBiometricEnabledCache } from "@/lib/sync-biometric-cache";
 import {
   BiometricIcon,
   LocationIcon,
@@ -81,6 +82,10 @@ export function SettingsToggles({
       if (actual && cached?.biometricAvailable !== undefined) setBiometricAvailable(cached.biometricAvailable);
     });
     writeSettingsCache({ biometricEnabled: biometricEnabledInitial, quietHours: quietHoursInitial });
+    // Mirrors into the native cache the offline islands read from (SRS
+    // FR-9.1) - separate from the browser-only cache above, which those
+    // islands cannot reach at all (different origin, no shared storage).
+    if (actual) syncBiometricEnabledCache(biometricEnabledInitial);
     // Retry any optimistic write (see lib/settings-sync.ts) that didn't get
     // confirmed before this page was last left - e.g. the app closed right
     // after a toggle, before its POST got a response.
@@ -158,6 +163,7 @@ export function SettingsToggles({
     // on the dashboard.
     setBiometricEnabled(false);
     writeSettingsCache({ biometricEnabled: false });
+    if (isNative) syncBiometricEnabledCache(false);
     const ok = await writeSettingOptimistically("biometric", "/api/auth/biometric/disable", {});
     if (!ok) setError("Couldn't save that setting - we'll keep retrying.");
   }
@@ -247,6 +253,7 @@ export function SettingsToggles({
     // the same as everywhere else - see lib/settings-sync.ts.
     setBiometricEnabled(true);
     writeSettingsCache({ biometricEnabled: true });
+    if (isNative) syncBiometricEnabledCache(true);
     const ok = await writeSettingOptimistically("biometric", "/api/auth/biometric/enable", {});
     if (!ok) setError("Couldn't save that setting - we'll keep retrying.");
   }

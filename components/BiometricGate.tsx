@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
-import { BiometricPrimer } from "@/lib/native-permissions";
+import { BiometricPrimer, LocalSettingsCache } from "@/lib/native-permissions";
 import { BiometricIcon } from "@/components/PermissionPrimer";
 import { useBiometricGateStore } from "@/lib/biometric-gate-store";
 
@@ -44,6 +44,27 @@ export function BiometricGate({
         if (!cancelled) setStatus("unsupported");
         return;
       }
+
+      // LocalSettingsCache.isUnlocked() is the one flag the native
+      // pre-connectivity gate (Android), this gate and the offline islands'
+      // own gate all read and write (SRS Section 9) - a device unlocked by
+      // any of them is recognised as unlocked by the others without
+      // prompting again. No bridge / plugin unreachable falls through to
+      // the availability check below exactly as before.
+      try {
+        const nativeUnlock = await LocalSettingsCache.isUnlocked();
+        if (nativeUnlock.unlocked) {
+          if (!cancelled) {
+            markUnlocked();
+            setStatus("unlocked");
+          }
+          return;
+        }
+      } catch {
+        // fall through
+      }
+      if (cancelled) return;
+
       try {
         const result = await BiometricPrimer.isAvailable();
         if (!cancelled) setStatus(result.available ? "locked" : "unsupported");
@@ -56,7 +77,7 @@ export function BiometricGate({
     return () => {
       cancelled = true;
     };
-  }, [enabled, unlockedThisSession]);
+  }, [enabled, unlockedThisSession, markUnlocked]);
 
   async function handleUnlock() {
     setError(null);
@@ -64,6 +85,7 @@ export function BiometricGate({
       const result = await BiometricPrimer.authenticate({ title: "Confirm it's you" });
       if (result.success) {
         markUnlocked();
+        LocalSettingsCache.markUnlocked().catch(() => {});
         setStatus("unlocked");
       } else {
         setError(result.error ?? "Biometric check did not succeed.");
@@ -75,8 +97,14 @@ export function BiometricGate({
 
   async function handleLogOut() {
     // A different account may sign in next on this device/session - it
-    // must not inherit this unlock.
+    // must not inherit this unlock. Also clears the offline gate's native,
+    // process-lifetime unlock flag (SRS FR-9.2) for the same reason: that
+    // flag is separate from this JS store and would otherwise survive a
+    // sign-out within the same running app process.
     resetUnlocked();
+    if (Capacitor.isNativePlatform()) {
+      await LocalSettingsCache.resetUnlock().catch(() => {});
+    }
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
   }

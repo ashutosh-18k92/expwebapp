@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
 import { BiometricPrimer } from "@/lib/native-permissions";
+import { syncBiometricEnabledCache } from "@/lib/sync-biometric-cache";
 import { BiometricIcon, PermissionPrimer } from "@/components/PermissionPrimer";
 import { Input } from "@/components/ui/input";
 
@@ -56,6 +57,7 @@ export default function RegisterPage() {
       const result = await BiometricPrimer.authenticate({ title: "Confirm it's you" });
       if (result.success) {
         await fetch("/api/auth/biometric/enable", { method: "POST" });
+        await syncBiometricEnabledCache(true);
       }
     } catch {
       // Plugin unavailable or the prompt failed - just skip enabling.

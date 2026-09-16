@@ -81,6 +81,12 @@ export interface UserDoc {
   // of whether quietHours is enabled.
   timeZone?: string;
   createdAt: Date;
+  // Literal last app-open time - set on login/register and again on every
+  // native sliding-window session renewal (lib/auth/session.ts). Distinct
+  // from SessionDoc.createdAt/expiresAt, which describe the session record
+  // itself, not the account. Optional: existing accounts predate this
+  // field until they next authenticate.
+  lastLoginAt?: Date;
 }
 
 export interface SessionDoc {
