@@ -2,11 +2,8 @@ import { redirect } from "next/navigation";
 import { ShieldOff, FileText } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDb, type PolicyDoc } from "@/lib/db";
-
-function fileExtension(fileName: string): string {
-  const dot = fileName.lastIndexOf(".");
-  return dot === -1 ? "" : fileName.slice(dot);
-}
+import { isNativeClient } from "@/lib/platform";
+import { PolicyDownloadButton } from "@/components/PolicyDownloadButton";
 
 export default async function PoliciesPage() {
   const user = await getCurrentUser();
@@ -20,10 +17,22 @@ export default async function PoliciesPage() {
     .find({ userId: user._id })
     .sort({ active: -1, createdAt: -1 })
     .toArray();
+  const isNative = await isNativeClient();
 
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-5 p-6">
       <h1 className="text-2xl font-bold">My policies</h1>
+
+      {/*
+        Customer-facing copy - DRAFT, needs Compliance sign-off before ship
+        per FOGIL's FCA authorisation.
+      */}
+      {isNative && policies.length > 0 && (
+        <p className="text-xs text-slate-500">
+          Tap Save for offline use on a document to keep it available on this device without a
+          connection - see it again from My policies on the offline home screen.
+        </p>
+      )}
 
       {policies.length === 0 && (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-slate-200 p-6 text-center">
@@ -75,13 +84,16 @@ export default async function PoliciesPage() {
               </p>
             )}
 
-            <a
-              href={`/${policy.userId}/${policy.fileName}`}
-              download={`${policy.displayName}${fileExtension(policy.fileName)}`}
-              className="self-start rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-700"
-            >
-              Download
-            </a>
+            <PolicyDownloadButton
+              userId={policy.userId}
+              fileName={policy.fileName}
+              displayName={policy.displayName}
+              active={policy.active}
+              policyNumber={policy.policyNumber}
+              coverType={policy.coverType}
+              startDate={policy.startDate?.toISOString()}
+              endDate={policy.endDate?.toISOString()}
+            />
           </li>
         ))}
       </ul>

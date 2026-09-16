@@ -1,11 +1,19 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Capacitor } from "@capacitor/core";
+import { PolicyCache } from "@/lib/native-permissions";
 
 export function LogoutButton() {
   const router = useRouter();
 
   async function handleClick() {
+    // A different account may sign in next on this device - it must not
+    // inherit this customer's cached policy documents (SRS Section 11,
+    // FR-11.5), mirroring BiometricGate.tsx's own logout-time native reset.
+    if (Capacitor.isNativePlatform()) {
+      await PolicyCache.clearCache().catch(() => {});
+    }
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
   }

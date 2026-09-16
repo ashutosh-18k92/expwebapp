@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
-import { BiometricPrimer, LocalSettingsCache } from "@/lib/native-permissions";
+import { BiometricPrimer, LocalSettingsCache, PolicyCache } from "@/lib/native-permissions";
 import { BiometricIcon } from "@/components/PermissionPrimer";
 import { useBiometricGateStore } from "@/lib/biometric-gate-store";
 
@@ -100,10 +100,14 @@ export function BiometricGate({
     // must not inherit this unlock. Also clears the offline gate's native,
     // process-lifetime unlock flag (SRS FR-9.2) for the same reason: that
     // flag is separate from this JS store and would otherwise survive a
-    // sign-out within the same running app process.
+    // sign-out within the same running app process. Same reasoning extends
+    // to cached policy documents (SRS Section 11, FR-11.5): a different
+    // customer signing in next must not see the previous customer's saved
+    // policy files on the offline islands "My policies" tab.
     resetUnlocked();
     if (Capacitor.isNativePlatform()) {
       await LocalSettingsCache.resetUnlock().catch(() => {});
+      await PolicyCache.clearCache().catch(() => {});
     }
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");

@@ -84,9 +84,47 @@ interface LocalSettingsCachePlugin {
   resetUnlock(): Promise<void>;
 }
 
+/**
+ * Native cache for a customer's downloaded policy documents (SRS Section
+ * 11, FR-11.5): fog-mobile-app's offline "My policies" island shares no
+ * filesystem/storage access with this origin (islands/src/island-bridge.js),
+ * so a file downloaded here has no other way to reach it. `path` is a path
+ * on this app's own origin only (e.g. "/<userId>/<fileName>"), never a full
+ * URL - the native side resolves and validates it the same way FogShell's
+ * loadRemote does, and derives the cached file's name from it. clearCache()
+ * is called on sign-out (components/LogoutButton.tsx,
+ * components/BiometricGate.tsx), mirroring LocalSettingsCache.resetUnlock(),
+ * so at most one customer's policy documents are ever cached on a device.
+ */
+export interface PolicyCacheEntry {
+  fileName: string;
+  displayName: string;
+  active: boolean;
+  policyNumber?: string;
+  coverType?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+interface PolicyCachePlugin {
+  cacheFile(options: {
+    path: string;
+    displayName: string;
+    active: boolean;
+    policyNumber?: string;
+    coverType?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<void>;
+  listCachedFiles(): Promise<{ policies: PolicyCacheEntry[] }>;
+  openFile(options: { fileName: string }): Promise<void>;
+  clearCache(): Promise<void>;
+}
+
 export const LocationPrimer = registerPlugin<LocationPrimerPlugin>("LocationPrimer");
 export const NotificationPrimer = registerPlugin<NotificationPrimerPlugin>("NotificationPrimer");
 export const BiometricPrimer = registerPlugin<BiometricPrimerPlugin>("BiometricPrimer");
 export const NotificationTopics = registerPlugin<NotificationTopicsPlugin>("NotificationTopics");
 export const PushToken = registerPlugin<PushTokenPlugin>("PushToken");
 export const LocalSettingsCache = registerPlugin<LocalSettingsCachePlugin>("LocalSettingsCache");
+export const PolicyCache = registerPlugin<PolicyCachePlugin>("PolicyCache");
