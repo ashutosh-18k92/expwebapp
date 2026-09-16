@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Settings, User, ArrowLeftRight, Plane } from "lucide-react";
+import { Settings, User, ArrowLeftRight, Plane, FileText } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
 import { NotificationBell } from "@/components/NotificationBell";
 import { DeviceTokenSync } from "@/components/DeviceTokenSync";
@@ -52,6 +52,12 @@ export default async function DashboardPage() {
           icon={<Plane className="h-5 w-5 text-[#0284C7]" />}
           title="Manage journeys"
           description="Schedule and view your upcoming trips."
+        />
+        <DashboardCard
+          href="/policies"
+          icon={<FileText className="h-5 w-5 text-[#0284C7]" />}
+          title="My policies"
+          description="View and download your policy documents."
         />
       </div>
     </div>

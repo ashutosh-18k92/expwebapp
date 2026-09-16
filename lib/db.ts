@@ -38,6 +38,7 @@ async function ensureIndexes(db: Db): Promise<void> {
     db.collection("journeys").createIndex({ journeyDate: 1, reminderSentAt: 1 }),
     db.collection("notifications").createIndex({ userId: 1, createdAt: -1 }),
     db.collection("devices").createIndex({ userId: 1 }),
+    db.collection("policies").createIndex({ userId: 1 }),
   ]);
 }
 
@@ -120,5 +121,22 @@ export interface NotificationDoc {
   userId: string;
   title: string;
   body: string;
+  createdAt: Date;
+}
+
+export interface PolicyDoc {
+  _id: string;
+  userId: string;
+  displayName: string;
+  active: boolean;
+  policyNumber?: string;
+  coverType?: string;
+  startDate?: Date;
+  endDate?: Date;
+  // Resolved against public/<userId>/<fileName> at download time. That
+  // location is a known limitation (see SRS.md Section 12) rather than a
+  // deliberate design choice - it is Next.js's static-asset root, served
+  // without a per-request auth check.
+  fileName: string;
   createdAt: Date;
 }
