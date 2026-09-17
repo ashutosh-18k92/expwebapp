@@ -74,6 +74,13 @@ export interface UserDoc {
   email: string;
   passwordHash: string;
   passwordSalt: string;
+  // Required at registration; optional here only because accounts created
+  // before this field existed predate it - see app/account/page.tsx for how
+  // an existing account fills these in. Used, among other things, to derive
+  // the password on an emailed policy document (see FR-11.4/11.6 in
+  // SRS.md) - the email flow refuses to run until both are set.
+  firstName?: string;
+  dateOfBirth?: Date;
   biometricEnabled: boolean;
   notificationTopics: NotificationTopicPreferences;
   quietHours?: QuietHoursSettings;

@@ -3,7 +3,7 @@ import { ShieldOff, FileText } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDb, type PolicyDoc } from "@/lib/db";
 import { isNativeClient } from "@/lib/platform";
-import { PolicyDownloadButton } from "@/components/PolicyDownloadButton";
+import { PolicyDeliveryButton } from "@/components/PolicyDeliveryButton";
 
 export default async function PoliciesPage() {
   const user = await getCurrentUser();
@@ -32,6 +32,9 @@ export default async function PoliciesPage() {
           Tap Save for offline use on a document to keep it available on this device without a
           connection - see it again from My policies on the offline home screen.
         </p>
+      )}
+      {!isNative && policies.length > 0 && (
+        <p className="text-xs text-slate-500">We&apos;ll email a copy to your registered address.</p>
       )}
 
       {policies.length === 0 && (
@@ -84,7 +87,8 @@ export default async function PoliciesPage() {
               </p>
             )}
 
-            <PolicyDownloadButton
+            <PolicyDeliveryButton
+              policyId={policy._id}
               userId={policy.userId}
               fileName={policy.fileName}
               displayName={policy.displayName}

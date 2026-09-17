@@ -12,6 +12,8 @@ export default function RegisterPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
@@ -24,7 +26,7 @@ export default function RegisterPage() {
     const response = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, firstName, dateOfBirth }),
     });
     const data = await response.json();
     setSubmitting(false);
@@ -83,6 +85,21 @@ export default function RegisterPage() {
             required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          First name
+          <Input required value={firstName} onChange={(event) => setFirstName(event.target.value)} />
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          Date of birth
+          <Input
+            type="date"
+            required
+            value={dateOfBirth}
+            onChange={(event) => setDateOfBirth(event.target.value)}
           />
         </label>
 

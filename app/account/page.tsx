@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { LogoutButton } from "@/components/LogoutButton";
+import { ProfileForm } from "@/components/ProfileForm";
 
 export default async function AccountPage() {
   const user = await getCurrentUser();
@@ -15,6 +16,10 @@ export default async function AccountPage() {
       <p className="text-sm text-slate-500">
         Biometric sign-in: {user.biometricEnabled ? "enabled" : "not enabled"}.
       </p>
+      <ProfileForm
+        firstNameInitial={user.firstName ?? ""}
+        dateOfBirthInitial={user.dateOfBirth ? user.dateOfBirth.toISOString().slice(0, 10) : ""}
+      />
       <LogoutButton />
     </div>
   );

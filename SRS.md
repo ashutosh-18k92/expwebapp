@@ -1,14 +1,14 @@
 # FOG Experience Platform: Software Requirements Specification
 
 - Doc ID: FOG-SRS-EXP-01
-- Version: 0.5 (Sections 1-8 reconstructed from implementation history; Sections 9-10 were forward-specified, then built and partly device-verified against that spec in the same pass; Section 11 was forward-specified and built web-only in the same pass, with its native/offline portion deferred rather than built)
+- Version: 0.8 (Sections 1-8 reconstructed from implementation history; Sections 9-10 were forward-specified, then built and partly device-verified against that spec in the same pass; Section 11 was forward-specified and built across three passes - web download, native/offline, then a same-day revision replacing the download with email delivery (a password-protection addition to that revision was specified, built and withdrawn the same day, before verification - see FR-11.6); Section 12 is forward-specified only, not yet built - planned for a later session)
 - Status: Draft, unreviewed
 - Systems in scope: `exp-webapp`, `fog-push-notification-service`, `fog-mobile-app`
 - Brands: Agua, Bounce, Centrd (each its own deployment on Crayeres)
 
 ## About this document
 
-This lists the notification, settings, permissions and navigation features built across the three repositories, written as requirements rather than a change log. Sections 1 to 8 were reconstructed after the fact from an implementation session, not authored ahead of the work they describe, and none of it has been reviewed by engineering or Compliance. Treat every "Implemented" status as a claim to verify against the current codebase before relying on it, and every quoted customer-facing string as DRAFT pending sign-off, not approved copy. Sections 9 and 10 are the exception: both were specified ahead of implementation, then implemented and, for the parts noted "verified on device", exercised end to end on a live Android emulator against a real deployed environment and a real MongoDB - not merely type-checked or unit-tested. Section 11 was specified ahead of implementation too, but only its web scope (`exp-webapp`) was built in this pass; its native/offline scope was deliberately deferred as follow-up work, not built and not verified on any device.
+This lists the notification, settings, permissions and navigation features built across the three repositories, written as requirements rather than a change log. Sections 1 to 8 were reconstructed after the fact from an implementation session, not authored ahead of the work they describe, and none of it has been reviewed by engineering or Compliance. Treat every "Implemented" status as a claim to verify against the current codebase before relying on it, and every quoted customer-facing string as DRAFT pending sign-off, not approved copy. Sections 9 and 10 are the exception: both were specified ahead of implementation, then implemented and, for the parts noted "verified on device", exercised end to end on a live Android emulator against a real deployed environment and a real MongoDB - not merely type-checked or unit-tested. Section 11 was specified ahead of implementation too: its web scope (`exp-webapp`) was built first, and its native/offline scope followed in a second pass against `fog-mobile-app`, confirmed working end to end on an Android emulator. A same-day third pass then revised FR-11.4 to email delivery once browser downloads were judged unsafe for this kind of document; a password-protection addition to that same pass (FR-11.6, IronPDF) was specified and built but withdrawn the same day, before real credentials existed to verify it, so it is recorded as removed rather than implemented. FR-11.4 itself builds cleanly but is honestly marked as blocked on real Resend credentials rather than device-verified. Section 12 is specified ahead of implementation and not yet built at all - captured here as agreed requirements for a later session, not a claim of anything working.
 
 FOGIL (company 17037311) is the FCA-authorised entity behind the Agua, Bounce and Centrd brands. FOG is pre-launch: nothing in this document has run against live customers or production traffic.
 
@@ -25,7 +25,8 @@ FOGIL (company 17037311) is the FCA-authorised entity behind the Agua, Bounce an
 9. [Unified biometric gateway](#9-unified-biometric-gateway)
 10. [Native session persistence](#10-native-session-persistence)
 11. [Customer policy documents](#11-customer-policy-documents)
-12. [Known limitations and deferred work](#12-known-limitations-and-deferred-work)
+12. [Planned: live connectivity handling and uninstall data hygiene](#12-planned-live-connectivity-handling-and-uninstall-data-hygiene)
+13. [Known limitations and deferred work](#13-known-limitations-and-deferred-work)
 
 ---
 
@@ -207,6 +208,18 @@ Status: Implemented
 A customer can turn biometric sign-in on or off from Settings, gated behind an actual hardware authentication check before it is switched on.
 
 Files: `app/api/auth/biometric/`
+
+### FR-2.8 Customer profile: first name and date of birth
+
+Status: Implemented
+
+A customer's first name and date of birth, collected at registration and editable afterwards from the Account page. Originally added to derive the password on an emailed policy document (FR-11.6); that feature was withdrawn the same day (2026-09-17), before real credentials existed to verify it, but these two fields were kept by product decision. No feature currently reads them back.
+
+Acceptance criteria:
+- Required fields on the registration form; existing accounts created before these fields existed can fill them in from Account
+- Stored as a plain string and a UTC-midnight `Date` respectively (`UserDoc.firstName`/`dateOfBirth`), both optional in the schema only because pre-existing accounts predate them
+
+Files: `lib/db.ts`, `app/register/page.tsx`, `app/api/auth/register/route.ts`, `app/account/page.tsx`, `components/ProfileForm.tsx`, `app/api/account/profile/route.ts`
 
 ---
 
@@ -499,7 +512,7 @@ Flagged, not resolved: `proxy.ts`'s own guidance cautions against relying on sha
 
 ## 11. Customer policy documents
 
-`exp-webapp`: lets a signed-in customer see and download their own policy documents. This section covers the web scope only, built in this pass. A native/offline scope was discussed during requirements and deliberately deferred rather than built - see [Section 12](#12-known-limitations-and-deferred-work).
+`exp-webapp`, `fog-mobile-app`: lets a signed-in customer see their own policy documents, receive a copy by email, and, once saved on a native device, use one offline. Built in three passes, all on 2026-09-17 or earlier: FR-11.1 to FR-11.4 (`exp-webapp`, web, originally a plain browser download) first; FR-11.5 (`fog-mobile-app`, native/offline) as an explicit follow-up once the web scope was confirmed working; then FR-11.4 was revised (2026-09-17) once browser downloads were judged unsafe for this kind of document - replaced with emailing a copy instead. A same-day addition, password-protecting that email via IronPDF (FR-11.6), was specified, built and then withdrawn before it could be verified against real credentials - see FR-11.6 for that record. FR-11.5's native "Save for offline use" action is deliberately untouched by any of this - see its own note.
 
 ### FR-11.1 Policy metadata store
 
@@ -511,7 +524,7 @@ Acceptance criteria:
 - Stores at minimum a display name and an active/inactive flag, plus optionally a policy/reference number, cover type, start date and end date
 - Indexed by `userId` so a customer's own records are looked up directly, never by scanning
 
-Note: there is no admin/back-office authoring flow for these records yet - see [Section 12](#12-known-limitations-and-deferred-work). `scripts/seed-policies.mjs` is a one-off dev helper that upserts records for the two test accounts used to build this feature, not a production ingestion path.
+Note: there is no admin/back-office authoring flow for these records yet - see [Section 13](#13-known-limitations-and-deferred-work). `scripts/seed-policies.mjs` is a one-off dev helper that upserts records for the two test accounts used to build this feature, not a production ingestion path.
 
 Files: `lib/db.ts` (`PolicyDoc`), `scripts/seed-policies.mjs`
 
@@ -533,34 +546,85 @@ Note: this copy is DRAFT and requires Compliance sign-off before use, as a finan
 
 Files: `app/policies/page.tsx`
 
-### FR-11.4 Document download to device (web)
+### FR-11.4 Document delivery via email (web)
+
+Status: Implemented (supersedes an earlier plain-browser-download version of this requirement, same FR number)
+
+Superseded design, kept for the audit trail: the My Policies screen originally let a customer save a policy document straight to their device via the browser's own download mechanism. Revised 2026-09-17: a direct browser download was judged unsafe for this kind of document, so the web screen now emails a copy to the customer's own registered address instead of serving a direct link. Native's separate "Save for offline use" action (FR-11.5) is unrelated and intentionally unchanged - see that FR's own note. Password protection was specified as part of the same revision (IronPDF, FR-11.6) but was withdrawn the same day, before any credential existed to verify it against - see FR-11.6.
+
+Acceptance criteria:
+- A new `POST /api/policies/[id]/email` route: authenticates the caller, confirms the policy belongs to them, and emails the document as an attachment to the signed-in customer's own account email - never a caller-supplied address
+- The My Policies screen's action button reads "Email me this document" on web, with sending/sent/error states; no plain download link remains
+
+Note: the underlying file is still read from `public/<userId>/<fileName>` - see the storage-location limitation in [Section 13](#13-known-limitations-and-deferred-work), unchanged by this revision. Sending requires a real Resend account, a verified sending domain and `RESEND_API_KEY`/`EMAIL_FROM` in the environment - none of which exist yet; see Section 13.
+
+Files: `app/api/policies/[id]/email/route.ts`, `lib/email.ts`, `lib/policy-document.ts`, `components/PolicyDeliveryButton.tsx`, `app/policies/page.tsx`
+
+### FR-11.5 Native offline availability
 
 Status: Implemented
 
-From the My Policies screen, a customer can save a policy document to their device using the browser's own download mechanism, with the saved file named after the policy's display name rather than its stored file name.
+A downloaded policy document stays available inside the native app while offline, via a "My policies" entry in the bundled offline shell's Quick Links, matching FR-9's precedent for app-shell islands (emergency, phrase book, ambient noise). Not the full personalised homepage card the original drawn design shows - that still needs ACR-062's device-credential session (recorded in `islands/src/offline.html`'s own header comment) - so this ships as a Quick Links entry rather than a homepage widget.
 
 Acceptance criteria:
-- Only policies belonging to the signed-in customer appear on their own screen, so a customer only ever sees a download link to their own document under normal use
+- A new `PolicyCache` Capacitor plugin (Android) persists a downloaded file to app-private storage and records its display name, active flag, policy number, cover type and dates alongside it - `cacheFile` never accepts a caller-supplied URL, only a path resolved against this app's own configured origin (mirrors `FogShellPlugin.remoteUrlForPath`'s discipline), since every registered plugin is callable from any frame the WebView loads, including a compromised third-party iframe
+- The My Policies web screen offers "Save for offline use" (native) or "Email me this document" (web, FR-11.4) from the same `PolicyDeliveryButton` component, branching on `Capacitor.isNativePlatform()` - a plain `<a download>` is not reliably handled inside a Capacitor WebView, and a browser-style download would not be readable back by the island anyway, since islands share no storage with the signed-in origin
+- The islands "My policies" page lists whatever is cached and hands a tap off to the device's own PDF viewer (`ACTION_VIEW` via a `FileProvider` content URI) - it makes no network call of its own and renders identically online or off
+- Cached policy files are cleared on sign-out (`PolicyCache.clearCache()`, called from both `components/LogoutButton.tsx` and `components/BiometricGate.tsx`'s own logout path), mirroring FR-9.2's unlock-flag reset, so a different customer signing in next is never handed the previous customer's saved policy documents
+- iOS not built - mirrors Section 9's Android-first precedent for native-shell work
 
-Note: this does not add a server-side, per-request ownership check on the file itself - see the storage-location limitation in [Section 12](#12-known-limitations-and-deferred-work). This is the accepted state for the current testing phase, not a resolved design.
+Verified: the Android Java compiles clean against the real Capacitor 8.5.0 APIs (`:app:compileDebugJavaWithJavac`) and the island bundle builds clean for all three brands with no unsubstituted placeholders or undefined tokens (`buildIslands()`). The end-to-end runtime flow (save for offline use -> cached file appears in the islands My Policies tab -> opens in the device's PDF viewer) was confirmed working on device against the deployed origin.
 
-Files: `app/policies/page.tsx`
+Files: `template/android/app/src/main/java/com/forestoaksgroup/agua/PolicyCachePlugin.java` (new), `MainActivity.java`, `res/xml/file_paths.xml` (all `fog-mobile-app`); `islands/src/my-policies.html`/`.css`/`.js` (new), `islands/src/offline.html` (`fog-mobile-app`); `lib/native-permissions.ts`, `components/PolicyDeliveryButton.tsx`, `app/policies/page.tsx`, `components/LogoutButton.tsx`, `components/BiometricGate.tsx` (all `exp-webapp`)
 
-### FR-11.5 Native offline availability (deferred, not built)
+### FR-11.6 Password-protected policy documents (IronPDF) (removed)
 
-Status: Deferred - scoped but not built
+Status: Removed same day, before device/credential verification - requirement withdrawn, not abandoned mid-build
 
-Making a downloaded policy document available inside the native app while offline, via a new tab on the islands (bundled offline shell) landing page identical in design to the online My Policies screen, was discussed as part of this requirement and deliberately deferred as follow-up work, not built in this pass.
+Originally: every policy document emailed to a customer (FR-11.4) would be encrypted first, using IronPDF, with a password built from information the customer already knows (first four letters of first name, lower case, plus date of birth as DDMMYYYY - `jaco18051992` for Jacob born 18 May 1992), AES-256, the email body explaining the pattern rather than stating the password. Built, compiling, and confirmed to reach IronPDF's own licence gate against a real seeded PDF - not verified past that point, since no `IRONPDF_LICENSE_KEY` existed. Withdrawn 2026-09-17, the same day it was specified, before any further verification was possible: the `@ironsoftware/ironpdf` dependency, `lib/policy-document.ts`'s encryption path, the password-derivation logic, the licence-gate note above and the two build-configuration fixes it needed (a `pnpm-workspace.yaml` override, `next.config.ts`'s `serverExternalPackages`) were all removed together. `lib/policy-document.ts` now only reads the file, unencrypted, for FR-11.4 to email as-is.
 
-Recorded for the follow-up piece of work:
-- Islands run as static bundles baked into `fog-mobile-app` at build time, with no filesystem access, no download/cache plugin, and no shared cookies/session with the signed-in web app today (see Section 9's description of island isolation). Reading a customer-downloaded file back from an island therefore needs a new native Capacitor plugin to persist and re-read cached files, not just web-side work.
-- Cached policy files should be scoped to the signed-in account and cleared on logout or account switch, mirroring FR-9.2's "signing out clears the shared unlock flag" behaviour, so a shared or handed-down device never shows one customer's downloaded policy documents to the next person who signs in.
-
-Files: none yet (`fog-mobile-app`)
+Kept here, not deleted from this document, as the record of what was specified, built and then intentionally taken back out - the same treatment FR-9.3/FR-9.4 got. FR-2.8's first name/date of birth fields were the one piece of this work kept regardless, by product decision, even though no feature currently reads them back - see FR-2.8's own note.
 
 ---
 
-## 12. Known limitations and deferred work
+## 12. Planned: live connectivity handling and uninstall data hygiene
+
+`fog-mobile-app`: two follow-up requirements agreed on 2026-09-16, after Section 11's native pass was confirmed working. Specified here ahead of implementation, in the same spirit as Sections 9-11 before they were built - status below is honest about it: nothing in this section is built yet.
+
+### FR-12.1 Live online-to-offline transition (native)
+
+Status: Not started - planned for a later session
+
+Today the cold-start gate (Section 9; `FogReachability.isDefinitelyOffline()` inside `MainActivity.runColdStartGate()`) only evaluates connectivity once, at cold start, and the backstop (`FogBackstopWebViewClient`) only diverts to the bundled offline shell when a navigation attempt itself fails. A customer already on the loaded remote origin whose connection drops mid-session - signal lost, flight mode, a tunnel - is not proactively moved to the offline shell; they are left on a now-stale, unresponsive page until they next navigate and that navigation fails.
+
+Requirement as raised: while the customer is online and something in the app loses signal in the meantime, the app should switch back to the offline view.
+
+To work out before this is built, not decided yet:
+- A native connectivity listener that runs for the app process's lifetime, not just at cold start (Android: `ConnectivityManager.NetworkCallback`, alongside `FogReachability`'s existing one-shot check) - and whether it should divert straight to `FogShellPlugin.loadLocal("offline.html")`-equivalent native behaviour, or reuse the existing backstop path
+- Whether a brief signal drop (a few seconds in a tunnel) should debounce before diverting, to avoid flapping between the remote origin and the offline shell on a flaky connection
+- Whether an in-flight navigation or form submission gets to fail on its own terms first, rather than being pre-empted by the listener
+- Whether regaining connectivity should auto-return to the remote origin, or continue to require the shell's own "Try again"
+- iOS is out of scope for now, mirroring Section 9's Android-first precedent - `FogReachability` already has an iOS counterpart for the cold-start gate; a live listener would need the same treatment there
+
+Files: likely `MainActivity.java`, `FogReachability.java`, `FogShellPlugin.java` (`fog-mobile-app`, Android) - not started
+
+### FR-12.2 Sign-out-before-uninstall ritual and full local data wipe
+
+Status: Not started - planned for a later session
+
+Requirement as raised: prompt a customer to sign out before they uninstall the app, and when that happens, wipe every local record and cache the app holds.
+
+Flag before this is designed, not a reason to drop the requirement: neither Android nor iOS gives an app a hook that runs as it is being uninstalled - by the time the OS could tell an app "you are about to be removed," that app's own process is already gone, so nothing can force a logout or a wipe as a genuine precondition of uninstalling. The literal "ask before uninstall happens" framing is not achievable as stated on either platform; it needs reframing before it is built. Threads worth pulling on next session, not decided yet:
+- A visible "Sign out and prepare for removal" action in Settings that a customer is prompted (once, or persistently) to use before uninstalling, that explicitly signs out and clears every native cache this app holds today (`LocalSettingsCache`'s biometric flag and unlock state, FR-9.1/FR-9.2; `PolicyCache`'s saved documents, FR-11.5) - offered and prompted, not enforced, since it cannot be enforced
+- On Android, app-private storage (`SharedPreferences`, internal `filesDir`, which is where both `LocalSettingsCache` and `PolicyCache` write today) is already wiped by the OS on a genuine uninstall as standard platform behaviour - the "wipe cache data" half of this ask may already be satisfied for a real uninstall as-is, which would narrow the real open problem to the sign-out prompt and the reinstall-or-handed-to-someone-else case, not a wipe the app needs to build itself
+- Needs a scope decision next session: is this about a genuine OS uninstall (where the platform likely already clears app-private storage), or about a customer switching accounts or handing the device on without uninstalling (a case FR-11.5's existing sign-out-clears-`PolicyCache` behaviour, and the equivalent for `LocalSettingsCache`, already cover)? The requirement as raised reads like the former; the behaviour that is actually buildable and already partly exists is the latter
+- Whichever direction this takes, treat a cache as untrusted at next launch rather than as a guarantee sign-out happened first - the same discipline `LocalSettingsCache`'s biometric flag already follows (corrected at every online sync, never the source of truth)
+
+Files: not yet determined
+
+---
+
+## 13. Known limitations and deferred work
 
 Raised and consciously set aside during this build phase, not overlooked.
 
@@ -572,5 +636,7 @@ Raised and consciously set aside during this build phase, not overlooked.
 - **FR-10.1's native session renewal is verified against a local dev server and this repo's own local MongoDB, not the deployed environment.** The renewal logic was exercised directly over HTTP with a simulated native header/cookie against `pnpm dev` and the database configured in `.env.local`; it has not yet been triggered by a real native app cold-launch/page-load request, nor checked against whatever database the deployed environment actually uses.
 - **A Chrome-specific notification permission report was diagnosed, not root-caused.** Firefox worked, Chrome did not respond to a permission request in one production report. This was traced to browser or profile-level permission state (an already-blocked origin, or Chrome's quiet-permission UI) rather than a defect in this codebase, and a clearer in-app error message was added regardless.
 - **Policy documents are served from Next.js's `public/` static directory, with no per-request authentication check on the file itself.** A policy PDF is technically fetchable by anyone who has, or guesses, its URL, regardless of who is signed in. This was a deliberate choice for the current testing phase against two dummy test accounts, not an oversight, and needs to be revisited (moving files to a private, server-only directory served through an authenticated route) before any real customer document is stored this way.
-- **Native offline availability for downloaded policy documents was scoped but not built.** FR-11.5 records what a follow-up piece of work needs: a new `fog-mobile-app` Capacitor plugin to persist and re-read cached files, and a new "My Policies" tab on the islands offline landing page. The web-only download flow (FR-11.4) ships first; nothing offline-capable exists yet.
+- **FR-11.5's native offline availability has an emulator pass, not a physical-device or iOS pass.** Confirmed working on an Android emulator (Pixel_7a AVD) against the deployed origin: saving a policy document for offline use, the islands "My policies" tab listing it, and opening it in the device's PDF viewer. Not yet checked: a physical Android device, a large policy PDF against the plugin's 25MB cache cap, and anything on iOS (no `PolicyCache` counterpart exists there yet, mirroring FR-9.5's Android-first precedent).
 - **Policy metadata has no admin/back-office authoring flow.** Records are written directly into MongoDB today, via `scripts/seed-policies.mjs` for the two test accounts built against. That is a dev convenience, not viable once there is a genuine operational process for adding a customer's policy documents.
+- **A live connectivity-loss transition and an uninstall data-hygiene ritual are agreed requirements, not yet built.** See [Section 12](#12-planned-live-connectivity-handling-and-uninstall-data-hygiene) (FR-12.1, FR-12.2) for what is understood so far, including why the uninstall requirement as raised needs reframing before it can be built at all - neither Android nor iOS lets an app hook its own uninstall.
+- **FR-11.4's email delivery has no real credentials configured anywhere yet.** `RESEND_API_KEY` and `EMAIL_FROM` are both absent from every environment, so the actual send call has never been exercised - only compiled and built. Needs a real Resend account with a verified sending domain before this can be verified further.
