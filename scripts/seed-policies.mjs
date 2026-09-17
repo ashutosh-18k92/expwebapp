@@ -27,6 +27,14 @@ const POLICIES = [
     policyNumber: "PLACEHOLDER-556895",
     coverType: "Annual multi-trip",
   },
+   {
+    userId: "2d4481cd-55bb-4fec-8011-9e1290119c88",
+    fileName: "stacy.pdf",
+    displayName: "Annual multi-trip travel insurance",
+    active: true,
+    policyNumber: "PLACEHOLDER-556895",
+    coverType: "Annual multi-trip",
+  },
 ];
 
 const uri = process.env.MONGODB_URI;
