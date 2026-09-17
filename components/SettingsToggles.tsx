@@ -2,12 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
-import { BiometricPrimer, NotificationTopics, type NotificationCategory } from "@/lib/native-permissions";
+import {
+  BiometricPrimer,
+  LocalSettingsCache,
+  NotificationTopics,
+  type NotificationCategory,
+} from "@/lib/native-permissions";
 import { reconcileNotificationTopics } from "@/lib/reconcile-notification-topics";
 import { getStrategies } from "@/lib/permission-strategies";
 import { readSettingsCache, writeSettingsCache } from "@/lib/settings-cache";
 import { flushPendingSettingsWrites, writeSettingOptimistically } from "@/lib/settings-sync";
-import { syncBiometricEnabledCache } from "@/lib/sync-biometric-cache";
 import {
   BiometricIcon,
   LocationIcon,
@@ -32,12 +36,10 @@ export interface QuietHoursPreference {
 }
 
 export function SettingsToggles({
-  biometricEnabledInitial,
   notificationTopicsInitial,
   quietHoursInitial,
   isNativeInitial,
 }: {
-  biometricEnabledInitial: boolean;
   notificationTopicsInitial: NotificationTopicPreferences;
   quietHoursInitial: QuietHoursPreference;
   isNativeInitial: boolean;
@@ -51,7 +53,7 @@ export function SettingsToggles({
   const [locationGranted, setLocationGranted] = useState(false);
   const [notificationGranted, setNotificationGranted] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
-  const [biometricEnabled, setBiometricEnabled] = useState(biometricEnabledInitial);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [topics, setTopics] = useState(notificationTopicsInitial);
   const [quietHours, setQuietHours] = useState(quietHoursInitial);
   const [detectedTimeZone, setDetectedTimeZone] = useState<string | null>(null);
@@ -68,24 +70,33 @@ export function SettingsToggles({
     const actual = Capacitor.isNativePlatform();
     const strategies = getStrategies(actual);
 
-    // Seed location/notification/biometric-availability from the on-device
-    // cache immediately, so these toggles don't flash "off" while the real
-    // checks below are still resolving - each is corrected the moment its
-    // real check resolves, a few lines down. biometricEnabled isn't seeded
-    // here: it's already synchronously correct from the server-provided
-    // prop above, and a stale cached value could only make it wrong.
+    // Seed location/notification/biometric-availability/biometric-enabled
+    // from the on-device cache immediately, so these toggles don't flash
+    // "off" while the real checks below are still resolving - each is
+    // corrected the moment its real check resolves, a few lines down.
     Promise.resolve().then(() => {
       if (cancelled) return;
       const cached = readSettingsCache();
       if (cached?.locationGranted !== undefined) setLocationGranted(cached.locationGranted);
       if (cached?.notificationGranted !== undefined) setNotificationGranted(cached.notificationGranted);
       if (actual && cached?.biometricAvailable !== undefined) setBiometricAvailable(cached.biometricAvailable);
+      if (actual && cached?.biometricEnabled !== undefined) setBiometricEnabled(cached.biometricEnabled);
     });
-    writeSettingsCache({ biometricEnabled: biometricEnabledInitial, quietHours: quietHoursInitial });
-    // Mirrors into the native cache the offline islands read from (SRS
-    // FR-9.1) - separate from the browser-only cache above, which those
-    // islands cannot reach at all (different origin, no shared storage).
-    if (actual) syncBiometricEnabledCache(biometricEnabledInitial);
+    writeSettingsCache({ quietHours: quietHoursInitial });
+    // Biometric sign-in is a per-device preference (FR-2.7): read straight
+    // from this device's own store, never from the account - a device that
+    // has never turned it on reads as not-enabled, same as a fresh install.
+    if (actual) {
+      LocalSettingsCache.getBiometricEnabled()
+        .then((result) => {
+          if (cancelled) return;
+          setBiometricEnabled(result.enabled);
+          writeSettingsCache({ biometricEnabled: result.enabled });
+        })
+        .catch(() => {
+          if (!cancelled) setBiometricEnabled(false);
+        });
+    }
     // Retry any optimistic write (see lib/settings-sync.ts) that didn't get
     // confirmed before this page was last left - e.g. the app closed right
     // after a toggle, before its POST got a response.
@@ -137,7 +148,7 @@ export function SettingsToggles({
     return () => {
       cancelled = true;
     };
-  }, [notificationTopicsInitial, biometricEnabledInitial, quietHoursInitial]);
+  }, [notificationTopicsInitial, quietHoursInitial]);
 
   function closePrimer() {
     setActivePrimer(null);
@@ -157,15 +168,17 @@ export function SettingsToggles({
       setActivePrimer("biometrics");
       return;
     }
-    // Optimistic: reflect this immediately and persist in the background -
-    // see lib/settings-sync.ts. Survives navigating away before the request
-    // completes; an unconfirmed write is retried on the next mount here or
-    // on the dashboard.
+    // Biometric sign-in is a per-device preference (FR-2.7): written
+    // straight to this device's own store, never to the account - there is
+    // no server round trip to retry, unlike the optimistic-write settings
+    // below.
     setBiometricEnabled(false);
     writeSettingsCache({ biometricEnabled: false });
-    if (isNative) syncBiometricEnabledCache(false);
-    const ok = await writeSettingOptimistically("biometric", "/api/auth/biometric/disable", {});
-    if (!ok) setError("Couldn't save that setting - we'll keep retrying.");
+    try {
+      await LocalSettingsCache.setBiometricEnabled({ enabled: false });
+    } catch {
+      setError("Couldn't save that setting. Try again.");
+    }
   }
 
   async function handleLocationAllow() {
@@ -249,13 +262,16 @@ export function SettingsToggles({
       return;
     }
     // The hardware authentication above has to be awaited (there's no way
-    // to turn this on before it succeeds), but from here on it's optimistic
-    // the same as everywhere else - see lib/settings-sync.ts.
+    // to turn this on before it succeeds), but from here on it's a direct
+    // write to this device's own store (FR-2.7), never the account - no
+    // server round trip to retry.
     setBiometricEnabled(true);
     writeSettingsCache({ biometricEnabled: true });
-    if (isNative) syncBiometricEnabledCache(true);
-    const ok = await writeSettingOptimistically("biometric", "/api/auth/biometric/enable", {});
-    if (!ok) setError("Couldn't save that setting - we'll keep retrying.");
+    try {
+      await LocalSettingsCache.setBiometricEnabled({ enabled: true });
+    } catch {
+      setError("Couldn't save that setting. Try again.");
+    }
   }
 
   return (

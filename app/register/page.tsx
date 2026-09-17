@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
-import { BiometricPrimer } from "@/lib/native-permissions";
-import { syncBiometricEnabledCache } from "@/lib/sync-biometric-cache";
+import { BiometricPrimer, LocalSettingsCache } from "@/lib/native-permissions";
 import { BiometricIcon, PermissionPrimer } from "@/components/PermissionPrimer";
 import { Input } from "@/components/ui/input";
 
@@ -57,9 +56,10 @@ export default function RegisterPage() {
   async function handleEnableBiometrics() {
     try {
       const result = await BiometricPrimer.authenticate({ title: "Confirm it's you" });
+      // Biometric sign-in is a per-device preference (FR-2.7) - written
+      // straight to this device's own store, never to the account.
       if (result.success) {
-        await fetch("/api/auth/biometric/enable", { method: "POST" });
-        await syncBiometricEnabledCache(true);
+        await LocalSettingsCache.setBiometricEnabled({ enabled: true });
       }
     } catch {
       // Plugin unavailable or the prompt failed - just skip enabling.

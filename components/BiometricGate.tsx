@@ -9,13 +9,7 @@ import { useBiometricGateStore } from "@/lib/biometric-gate-store";
 
 type GateStatus = "checking" | "locked" | "unlocked" | "unsupported";
 
-export function BiometricGate({
-  enabled,
-  children,
-}: {
-  enabled: boolean;
-  children: React.ReactNode;
-}) {
+export function BiometricGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const unlockedThisSession = useBiometricGateStore((state) => state.unlockedThisSession);
   const markUnlocked = useBiometricGateStore((state) => state.markUnlocked);
@@ -26,31 +20,30 @@ export function BiometricGate({
   // re-prompt every time even seconds after the user last unlocked -
   // unlockedThisSession lives in a module-level store instead of component
   // state, so it survives that remount for as long as the app stays open.
+  // Capacitor.isNativePlatform() is a synchronous, on-device check (unlike
+  // whether biometrics are enabled, which requires an async plugin read
+  // below), so a plain browser resolves straight to "unsupported" with no
+  // flash - only a native app ever needs the "checking" state.
   const [status, setStatus] = useState<GateStatus>(() => {
-    if (!enabled) return "unsupported";
+    if (!Capacitor.isNativePlatform()) return "unsupported";
     return unlockedThisSession ? "unlocked" : "checking";
   });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Initial state already accounts for `enabled`/unlockedThisSession -
+    // Initial state already accounts for non-native/unlockedThisSession -
     // nothing to (re-)check if either says so.
-    if (!enabled || unlockedThisSession) return;
+    if (!Capacitor.isNativePlatform() || unlockedThisSession) return;
 
     let cancelled = false;
 
     async function checkAvailability() {
-      if (!Capacitor.isNativePlatform()) {
-        if (!cancelled) setStatus("unsupported");
-        return;
-      }
-
       // LocalSettingsCache.isUnlocked() is the one flag the native
       // pre-connectivity gate (Android), this gate and the offline islands'
       // own gate all read and write (SRS Section 9) - a device unlocked by
       // any of them is recognised as unlocked by the others without
       // prompting again. No bridge / plugin unreachable falls through to
-      // the availability check below exactly as before.
+      // the enabled/availability checks below exactly as before.
       try {
         const nativeUnlock = await LocalSettingsCache.isUnlocked();
         if (nativeUnlock.unlocked) {
@@ -62,6 +55,22 @@ export function BiometricGate({
         }
       } catch {
         // fall through
+      }
+      if (cancelled) return;
+
+      // Biometric sign-in is a per-device preference (FR-2.7), read from
+      // this device's own store rather than the signed-in account - a
+      // device that has never turned it on reads as not-enabled, same as a
+      // fresh install.
+      try {
+        const { enabled } = await LocalSettingsCache.getBiometricEnabled();
+        if (!enabled) {
+          if (!cancelled) setStatus("unsupported");
+          return;
+        }
+      } catch {
+        if (!cancelled) setStatus("unsupported");
+        return;
       }
       if (cancelled) return;
 
@@ -77,7 +86,7 @@ export function BiometricGate({
     return () => {
       cancelled = true;
     };
-  }, [enabled, unlockedThisSession, markUnlocked]);
+  }, [unlockedThisSession, markUnlocked]);
 
   async function handleUnlock() {
     setError(null);

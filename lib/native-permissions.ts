@@ -67,14 +67,18 @@ interface PushTokenPlugin {
 }
 
 /**
- * Native-backed cache the offline islands read from, since they run on a
- * separate origin from this app and share no cookies or web storage with it
- * (see fog-mobile-app's islands/src/island-bridge.js). setBiometricEnabled
- * mirrors the account's biometricEnabled preference (FR-2.7) down to the
- * device; markUnlocked/isUnlocked/resetUnlock track the offline gate's own
- * process-lifetime "unlocked this app session" state (SRS Section 9,
- * FR-9.1/FR-9.2) - resetUnlock is called from here (BiometricGate.tsx) on
- * logout, mirroring this app's own session-store reset.
+ * Native-backed store the offline islands also read from, since they run on
+ * a separate origin from this app and share no cookies or web storage with
+ * it (see fog-mobile-app's islands/src/island-bridge.js).
+ * setBiometricEnabled/getBiometricEnabled is the device's own, sole record
+ * of the biometric sign-in preference (FR-2.7) - deliberately never stored
+ * in Mongo, since it's a per-device convenience setting, not an
+ * account-wide one: a second device signing into the same account starts
+ * with it off. markUnlocked/isUnlocked/resetUnlock separately track the
+ * offline gate's own process-lifetime "unlocked this app session" state
+ * (SRS Section 9, FR-9.2) - resetUnlock is called from here
+ * (BiometricGate.tsx) on logout, mirroring this app's own session-store
+ * reset.
  */
 interface LocalSettingsCachePlugin {
   setBiometricEnabled(options: { enabled: boolean }): Promise<void>;

@@ -1,7 +1,7 @@
 # FOG Experience Platform: Software Requirements Specification
 
 - Doc ID: FOG-SRS-EXP-01
-- Version: 0.8 (Sections 1-8 reconstructed from implementation history; Sections 9-10 were forward-specified, then built and partly device-verified against that spec in the same pass; Section 11 was forward-specified and built across three passes - web download, native/offline, then a same-day revision replacing the download with email delivery (a password-protection addition to that revision was specified, built and withdrawn the same day, before verification - see FR-11.6); Section 12 is forward-specified only, not yet built - planned for a later session)
+- Version: 0.9 (Sections 1-8 reconstructed from implementation history; Sections 9-10 were forward-specified, then built and partly device-verified against that spec in the same pass, though FR-2.7/FR-9.1 were later revised (2026-09-17) to a device-only biometric preference and that revision itself is not yet re-verified on device; Section 11 was forward-specified and built across three passes - web download, native/offline, then a same-day revision replacing the download with email delivery (a password-protection addition to that revision was specified, built and withdrawn the same day, before verification - see FR-11.6); Section 12 is forward-specified only, not yet built - planned for a later session)
 - Status: Draft, unreviewed
 - Systems in scope: `exp-webapp`, `fog-push-notification-service`, `fog-mobile-app`
 - Brands: Agua, Bounce, Centrd (each its own deployment on Crayeres)
@@ -203,11 +203,17 @@ Files: `lib/notification-topics-admin.ts`
 
 ### FR-2.7 Biometric sign-in preference
 
-Status: Implemented
+Status: Implemented (revised 2026-09-17 - see note)
 
 A customer can turn biometric sign-in on or off from Settings, gated behind an actual hardware authentication check before it is switched on.
 
-Files: `app/api/auth/biometric/`
+Note: originally an account-wide preference (`UserDoc.biometricEnabled` in MongoDB, written via `/api/auth/biometric/enable`/`disable`). Revised 2026-09-17: biometric sign-in is a per-device convenience setting, not an account-wide one - a customer's fingerprint enrolment on one phone has no bearing on a different phone, or a browser, signed into the same account - so it now lives only on the device. See FR-9.1 for the full record of what changed.
+
+Acceptance criteria:
+- Stored only in the native on-device store (`LocalSettingsCache`, Android `SharedPreferences` / iOS `UserDefaults`) - no Mongo field, no server round trip to read or write it
+- A device that has never turned this on reads as not-enabled, including a second device signing into an account that already has it enabled elsewhere
+
+Files: `lib/native-permissions.ts`, `components/SettingsToggles.tsx`, `components/BiometricGate.tsx`, `app/register/page.tsx`
 
 ### FR-2.8 Customer profile: first name and date of birth
 
@@ -235,7 +241,9 @@ The last-known state of biometric availability and enabled, location granted, no
 
 Acceptance criteria:
 - The cache is always corrected by the real check the moment it resolves; it is a perceived-latency aid, never the source of truth
-- A value already available synchronously (for example biometric preference or quiet hours, from the signed-in session) is never overwritten by a possibly stale cached one
+- A value already available synchronously (for example quiet hours, from the signed-in session) is never overwritten by a possibly stale cached one
+
+Note: biometric preference was originally an example of a value "already available synchronously from the signed-in session" - it no longer is. Since FR-2.7's 2026-09-17 revision, it is read the same way biometric availability already was: seeded from this cache, then corrected asynchronously from the `LocalSettingsCache` plugin, never from the server.
 
 Files: `lib/settings-cache.ts`
 
@@ -413,21 +421,25 @@ This section's shape changed twice during scoping, recorded here rather than sil
 1. First built as a per-island web gate (every bundled island ran its own "Confirm it's you" check once loaded).
 2. Redesigned as a native check that runs on Android *before* the app decides online vs offline, so neither surface loads - even hidden - before the customer has proven it's them; the per-island web gate was then removed as redundant, and the business requirement narrowed to "offline pages stay open to everyone, authenticated or not" once that native check has passed or did not apply. FR-9.3/FR-9.4 below record the removed first shape for the audit trail; FR-9.5/FR-9.6 describe what is actually built today.
 
-### FR-9.1 Cross-origin biometricsEnabled sync
+### FR-9.1 Native, on-device biometric-enabled store (originally: cross-origin biometricsEnabled sync)
 
-Status: Implemented, verified on device (Android emulator, against a live deployed environment)
+Status: Implemented (revised 2026-09-17, same FR number - see note on verification)
 
-The customer's `biometricEnabled` preference (FR-2.7), read into the online gate from the signed-in session, is mirrored into a native, disk-backed cache that native code can read before any WebView content exists. This is a new cache, kept deliberately separate from the existing on-device settings cache (FR-3.1), which is browser localStorage and unreachable from native code, and which this feature must not depend on or desynchronise from.
+Superseded design, kept for the audit trail: this was originally a sync mechanism. The customer's `biometricEnabled` preference, stored in MongoDB and read into the online gate from the signed-in session, was mirrored into a native, disk-backed cache so native code could read it before any WebView content exists.
+
+Revised 2026-09-17 (see FR-2.7): biometric sign-in was judged a per-device convenience setting, not an account-wide one. `UserDoc.biometricEnabled` was removed from MongoDB entirely, along with `/api/auth/biometric/enable`/`disable`. The native `LocalSettingsCache` store this FR introduced is unchanged in mechanism - same Capacitor plugin, same disk-backed storage (Android `SharedPreferences`, iOS `UserDefaults`) - but changes role: no longer a cache mirroring an account preference, it is now the sole, authoritative record of the preference, written directly by Settings and registration immediately after a hardware check succeeds, never synced from anywhere.
 
 Acceptance criteria:
-- A Capacitor plugin, `LocalSettingsCache` (Android: `SharedPreferences`-backed; iOS: `UserDefaults`-backed), exposes a get/set for the biometric-enabled flag
-- exp-webapp writes the current value into the cache whenever it is known: on every load of the biometric-gated Home page, and immediately after a successful `/api/auth/biometric/enable` or `/disable` call
-- A device that has never synced a value (fresh install, or never yet been online) reads as not-enabled, the same default a fresh account has online
-- The cache holds only this one flag today. It is not a general cross-origin settings channel; nothing else writes to it until a future requirement asks for that explicitly
+- A Capacitor plugin, `LocalSettingsCache`, exposes a get/set for the biometric-enabled flag
+- `components/SettingsToggles.tsx` and `app/register/page.tsx` write directly to this store - on enable, only after `BiometricPrimer.authenticate()` succeeds; on disable, immediately - with no server request involved either way
+- A device that has never turned this on reads as not-enabled, the same default a fresh install had before this revision, now also true of a second device signing into an account that already has it enabled elsewhere
+- The store holds only this one flag today (plus the separate unlock flag, FR-9.2). It is not a general cross-origin settings channel; nothing else writes to it until a future requirement asks for that explicitly
 
-Verified end to end on an Android emulator: registering, enabling biometrics, then a full app force-stop and relaunch correctly showed the native gate (FR-9.5) on the next cold start, confirming the synced value survived a process restart as designed.
+Note: removing the account-level copy also removes its self-correction property. Previously, a wrongly-flipped on-device value would be corrected at the next online sync against Mongo; now the device's own copy is the only copy, so nothing corrects it if it's wrong - recorded as a residual risk in `fog-mobile-app`'s README (`LocalSettingsCache` accepted-surfaces entry) and in [Section 13](#13-known-limitations-and-deferred-work).
 
-Files: `template/android/app/src/main/java/com/forestoaksgroup/agua/LocalSettingsCachePlugin.java`, `template/ios/App/App/LocalSettingsCachePlugin.swift` (fog-mobile-app); `lib/native-permissions.ts`, `lib/sync-biometric-cache.ts`, `components/BiometricCacheSync.tsx`, `app/page.tsx`, `components/SettingsToggles.tsx`, `app/register/page.tsx` (exp-webapp)
+Verified end to end, before this revision: registering, enabling biometrics, then a full app force-stop and relaunch correctly showed the native gate (FR-9.5) on the next cold start, confirming the value survived a process restart as designed. Not re-verified on device since the revision - the plugin mechanism is unchanged, but the new direct-write call sites (`SettingsToggles.tsx`, `app/register/page.tsx`) have only been type-checked, linted and built, not exercised on a device - see Section 13.
+
+Files: `template/android/app/src/main/java/com/forestoaksgroup/agua/LocalSettingsCachePlugin.java`, `template/ios/App/App/LocalSettingsCachePlugin.swift` (fog-mobile-app); `lib/native-permissions.ts`, `components/SettingsToggles.tsx`, `components/BiometricGate.tsx`, `app/register/page.tsx` (exp-webapp)
 
 ### FR-9.2 Process-scoped unlock state, shared across every surface
 
@@ -459,7 +471,7 @@ Originally: the island gate applied the same way to every bundled island, includ
 
 Status: Implemented, verified on device (Android emulator, Pixel_7a AVD)
 
-Before `MainActivity` decides whether to load the remote origin or the bundled offline shell, it checks the synced `biometricEnabled` flag (FR-9.1) and the shared unlock state (FR-9.2). If biometrics are enabled and the process is not already unlocked, a native lock screen (mirroring the online gate's look) blocks both the automatic remote load Capacitor already queued and the shell's own connectivity decision until the customer authenticates.
+Before `MainActivity` decides whether to load the remote origin or the bundled offline shell, it checks the on-device `biometricEnabled` flag (FR-9.1) and the shared unlock state (FR-9.2). If biometrics are enabled and the process is not already unlocked, a native lock screen (mirroring the online gate's look) blocks both the automatic remote load Capacitor already queued and the shell's own connectivity decision until the customer authenticates.
 
 Acceptance criteria:
 - A true no-op when biometrics are disabled (the default): no extra native view, no extra load, verified on-device
@@ -632,7 +644,9 @@ Raised and consciously set aside during this build phase, not overlooked.
 - **The quiet-hours bypass list ships empty.** The mechanism to exempt a notification category from quiet hours exists, but no category is on it yet, and there is no customer-facing control to manage it. It is a fixed backend policy today.
 - **Settings still depend on a server round-trip to open.** The on-device cache (FR-3.1) removes the visible flash while a page's own checks resolve; it does not remove the Settings page's own server-rendered data fetch. Doing so was considered and deliberately deferred as a larger, riskier restructuring.
 - **FR-3.1 and FR-3.4 remain unverified on real hardware.** Both were checked by type-checking, lint and server-rendering only; neither has been exercised on an actual Android device with real biometric hardware. Unlike Section 9's Android work, no emulator/device pass has been done for these two specifically.
-- **Section 9's Android build has an emulator pass, not a physical-device or iOS pass.** FR-9.1, FR-9.2, FR-9.5 and FR-9.6 were verified end to end on an Android emulator (Pixel_7a AVD) against a live deployed environment: registration, enabling biometrics, a full process restart correctly re-triggering the native gate, and the online gate correctly recognising an already-unlocked device with no second prompt. Not yet checked: a physical Android device, the `DEVICE_CREDENTIAL` (PIN/pattern) fallback path specifically (only the fingerprint path was exercised), the logout-clears-native-flag path, and anything on iOS (FR-9.5 is Android-only by design - see `fog-mobile-app`'s README "Known gaps").
+- **Section 9's Android build has an emulator pass, not a physical-device or iOS pass.** FR-9.1, FR-9.2, FR-9.5 and FR-9.6 were verified end to end on an Android emulator (Pixel_7a AVD) against a live deployed environment, before FR-9.1/FR-2.7's 2026-09-17 revision to a device-only preference: registration, enabling biometrics, a full process restart correctly re-triggering the native gate, and the online gate correctly recognising an already-unlocked device with no second prompt. Not yet checked: a physical Android device, the `DEVICE_CREDENTIAL` (PIN/pattern) fallback path specifically (only the fingerprint path was exercised), the logout-clears-native-flag path, and anything on iOS (FR-9.5 is Android-only by design - see `fog-mobile-app`'s README "Known gaps").
+- **FR-2.7/FR-9.1's device-only revision (2026-09-17) has not itself been verified on device.** The new direct-write call sites (`components/SettingsToggles.tsx`'s enable/disable handlers, `app/register/page.tsx`'s post-registration prompt) and `components/BiometricGate.tsx`'s restructured async check have only been type-checked, linted and built - not exercised against real biometric hardware since the change. The underlying `LocalSettingsCache` plugin mechanism is untouched and was itself verified before the revision (see the bullet above), which lowers but does not remove this risk.
+- **Removing the account-level `biometricEnabled` copy removes its self-correction property.** Recorded in FR-9.1 and in `fog-mobile-app`'s README: previously a wrongly-flipped on-device value (for example, from a compromised third-party iframe, since every registered plugin is callable from any frame - see that README's caller-set discussion) would self-correct at the next online sync against Mongo. Now the device's own copy is the only copy, so a caller that silently disables it leaves it disabled until the customer notices and re-enables it from Settings. It cannot, either way, grant an unlock without the separate hardware `authenticate()` step still succeeding - accepted on that basis, not blocking.
 - **FR-10.1's native session renewal is verified against a local dev server and this repo's own local MongoDB, not the deployed environment.** The renewal logic was exercised directly over HTTP with a simulated native header/cookie against `pnpm dev` and the database configured in `.env.local`; it has not yet been triggered by a real native app cold-launch/page-load request, nor checked against whatever database the deployed environment actually uses.
 - **A Chrome-specific notification permission report was diagnosed, not root-caused.** Firefox worked, Chrome did not respond to a permission request in one production report. This was traced to browser or profile-level permission state (an already-blocked origin, or Chrome's quiet-permission UI) rather than a defect in this codebase, and a clearer in-app error message was added regardless.
 - **Policy documents are served from Next.js's `public/` static directory, with no per-request authentication check on the file itself.** A policy PDF is technically fetchable by anyone who has, or guesses, its URL, regardless of who is signed in. This was a deliberate choice for the current testing phase against two dummy test accounts, not an oversight, and needs to be revisited (moving files to a private, server-only directory served through an authenticated route) before any real customer document is stored this way.

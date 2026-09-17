@@ -76,12 +76,16 @@ export interface UserDoc {
   passwordSalt: string;
   // Required at registration; optional here only because accounts created
   // before this field existed predate it - see app/account/page.tsx for how
-  // an existing account fills these in. Used, among other things, to derive
-  // the password on an emailed policy document (see FR-11.4/11.6 in
-  // SRS.md) - the email flow refuses to run until both are set.
+  // an existing account fills these in. No feature currently reads these
+  // back (see SRS.md FR-2.8) - kept after the one feature that used to need
+  // them, PDF password protection, was withdrawn.
   firstName?: string;
   dateOfBirth?: Date;
-  biometricEnabled: boolean;
+  // Deliberately NOT stored here - biometric sign-in is a per-device
+  // convenience setting, not an account-wide policy, so it lives only in
+  // the native on-device store (LocalSettingsCache, lib/native-permissions.ts)
+  // that already exists for the offline islands (SRS FR-2.7/FR-9.1). A
+  // second device signing into the same account starts with it off.
   notificationTopics: NotificationTopicPreferences;
   quietHours?: QuietHoursSettings;
   // IANA identifier, e.g. "Europe/London" - kept current by a client-side

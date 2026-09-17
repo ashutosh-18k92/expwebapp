@@ -20,7 +20,6 @@ export default async function SettingsPage() {
     <div className="mx-auto flex w-full max-w-sm flex-col gap-5 p-6">
       <h1 className="text-2xl font-bold">Settings</h1>
       <SettingsToggles
-        biometricEnabledInitial={user.biometricEnabled}
         notificationTopicsInitial={user.notificationTopics ?? DEFAULT_NOTIFICATION_TOPICS}
         quietHoursInitial={user.quietHours ?? DEFAULT_QUIET_HOURS}
         isNativeInitial={isNativeInitial}

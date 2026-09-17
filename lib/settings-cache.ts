@@ -14,10 +14,11 @@ export interface CachedSettingsState {
  * On-device cache of the last-known state of the three top-level Settings
  * toggles, so SettingsToggles can seed its UI instantly on mount instead of
  * flashing "off" while the real checks (native/Web permission calls, and
- * for biometricEnabled the server-provided prop) are still resolving. This
- * is purely a perceived-latency optimisation - the real checks still run
- * every mount and are what's actually trusted; this cache only fills the
- * gap until they resolve, and is corrected the moment they do.
+ * for biometricEnabled the LocalSettingsCache plugin read - FR-2.7 is a
+ * per-device preference with no server copy at all) are still resolving.
+ * This is purely a perceived-latency optimisation - the real checks still
+ * run every mount and are what's actually trusted; this cache only fills
+ * the gap until they resolve, and is corrected the moment they do.
  *
  * Backed by localStorage rather than a Capacitor plugin: the Capacitor
  * WebView on Android is a real system WebView with normal Web Storage

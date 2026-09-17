@@ -51,7 +51,6 @@ export async function POST(request: Request) {
       passwordSalt: salt,
       firstName,
       dateOfBirth: parsedDateOfBirth,
-      biometricEnabled: false,
       notificationTopics: { essentials: true, promotions: false, feeds: false },
       createdAt: new Date(),
     });
