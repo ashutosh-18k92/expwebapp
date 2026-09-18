@@ -1,7 +1,7 @@
 # FOG Experience Platform: Software Requirements Specification
 
 - Doc ID: FOG-SRS-EXP-01
-- Version: 0.9 (Sections 1-8 reconstructed from implementation history; Sections 9-10 were forward-specified, then built and partly device-verified against that spec in the same pass, though FR-2.7/FR-9.1 were later revised (2026-09-17) to a device-only biometric preference and that revision itself is not yet re-verified on device; Section 11 was forward-specified and built across three passes - web download, native/offline, then a same-day revision replacing the download with email delivery (a password-protection addition to that revision was specified, built and withdrawn the same day, before verification - see FR-11.6); Section 12 is forward-specified only, not yet built - planned for a later session)
+- Version: 1.0 (Sections 1-8 reconstructed from implementation history; Sections 9-10 were forward-specified, then built and partly device-verified against that spec in the same pass, though FR-2.7/FR-9.1 were later revised (2026-09-17) to a device-only biometric preference, and FR-9.7 added on top (2026-09-18) to bridge the resulting native page-load gap - both revisions device-verified; Section 11 was forward-specified and built across three passes - web download, native/offline, then a same-day revision replacing the download with email delivery (a password-protection addition to that revision was specified, built and withdrawn the same day, before verification - see FR-11.6); Section 12 is forward-specified only, not yet built - planned for a later session)
 - Status: Draft, unreviewed
 - Systems in scope: `exp-webapp`, `fog-push-notification-service`, `fog-mobile-app`
 - Brands: Agua, Bounce, Centrd (each its own deployment on Crayeres)
@@ -494,7 +494,27 @@ Acceptance criteria:
 - A successful online unlock marks the shared flag, not just the local JS store
 - No bridge / plugin unreachable falls through to the pre-existing availability-check behaviour unchanged
 
-Files: `components/BiometricGate.tsx`
+Fixed 2026-09-18 - a real regression, not a pre-existing gap: FR-2.7/FR-9.1's device-only revision (2026-09-17) had `BiometricGate.tsx` compute its initial render state from `Capacitor.isNativePlatform()` directly, synchronously. That call answers differently on the server (always "web", no bridge - Node has none) than on an actual native client during hydration, so for any real native session the server-rendered children and the client's first hydration render disagreed on whether to show anything at all. React's recovery from that structural mismatch showed both the server-painted content and the client's re-render stacked in the live DOM - reported as the dashboard, and separately the Register/Sign-in buttons, visibly appearing twice on a cold app open, resolving to normal after any subsequent in-app navigation (which involves no hydration). Fixed by moving the native/not-native answer to a value that is genuinely identical on both sides - the `fog_native_client` cookie via `lib/platform.ts`'s `isNativeClient()`, passed down as an `isNativeInitial` prop - with the real `Capacitor.isNativePlatform()` call confined to a `useEffect` (client-only, runs after hydration, never part of the server/client comparison), the same pattern `components/SettingsToggles.tsx` already used for this exact reason. Verified on device: cold app opens after the fix showed the buttons/dashboard exactly once, repeatedly, including on a fresh install.
+
+Files: `components/BiometricGate.tsx`, `app/page.tsx`
+
+### FR-9.7 Native page-loading transition after biometric unlock (Android only)
+
+Status: Implemented, verified on device (Android emulator, Pixel_7a AVD)
+
+Between a successful native biometric unlock (FR-9.5) and the remote origin's first paint, `MainActivity` had shown nothing: it resets the WebView to `about:blank` before the lock screen appears, so once the lock screen dismisses and the real page load begins, the customer briefly sees a blank white WebView while that page loads over the network - easily read as the app being stuck, right after the customer has just proven it's them. A bundled, local loading screen now fills that gap.
+
+Acceptance criteria:
+- Shown only for the post-unlock transition, not the plain (non-gated) cold start - that path's WebView load began the moment the Activity was created, before this feature's own `about:blank` reset ever runs, so it has no equivalent gap
+- Entirely local: a bundled layout and an indeterminate spinner, no network dependency, no bundled island page needed for this
+- Dismissed by a new `FogBackstopWebViewClient.onPageCommitVisible` hook, which fires as soon as whichever page the WebView navigated to is ready to be drawn - earlier than `onPageFinished`'s full-load-event wait - whichever page that turns out to be: the remote origin, or the bundled offline shell if the backstop diverts after a failed remote load
+- Colours and card styling mirror `native_biometric_gate.xml` (FR-9.5) so the two read as one continuous transition rather than two different screens
+
+Verified end to end: forced a fresh biometric-enabled state via the device's own `LocalSettingsCache` storage, force-stopped and relaunched, tapped through the native lock screen, and confirmed the loading screen ("Just a moment...") appeared immediately on unlock and was replaced by the real page a moment later, with no re-prompt from the online gate (FR-9.6 correctly recognised the already-shared unlock flag) and no recurrence of the FR-9.6-adjacent hydration-duplication bug fixed 2026-09-18.
+
+Note: customer-facing copy ("Just a moment...") is DRAFT and requires Compliance sign-off before use, as a financial promotion under FOGIL's FCA authorisation.
+
+Files: `template/android/app/src/main/java/com/forestoaksgroup/agua/NativePageLoadingOverlay.java` (new), `MainActivity.java`, `FogBackstopWebViewClient.java`, new `layout/native_page_loading.xml` and a string resource (all fog-mobile-app, Android only)
 
 ---
 

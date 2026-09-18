@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { User, Settings } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isNativeClient } from "@/lib/platform";
 import { BiometricGate } from "@/components/BiometricGate";
 import DashboardPage from "./dashboard/page";
 
@@ -26,9 +27,10 @@ function SettingsIcon() {
 
 export default async function Home() {
   const user = await getCurrentUser();
+  const isNativeInitial = await isNativeClient();
 
   return (
-    <BiometricGate>
+    <BiometricGate isNativeInitial={isNativeInitial}>
       <div>
         <main className="flex flex-col gap-5">
           {user ? (

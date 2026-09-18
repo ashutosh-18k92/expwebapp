@@ -35,6 +35,14 @@ const POLICIES = [
     policyNumber: "PLACEHOLDER-556895",
     coverType: "Annual multi-trip",
   },
+  {
+    userId: "2d4481cd-55bb-4fec-8011-9e1290119c88",
+    fileName: "stacy-expired.pdf",
+    displayName: "Single trip travel insurance",
+    active: false,
+    policyNumber: "PLACEHOLDER-556112",
+    coverType: "Single trip",
+  },
 ];
 
 const uri = process.env.MONGODB_URI;

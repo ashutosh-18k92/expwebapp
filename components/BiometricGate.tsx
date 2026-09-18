@@ -9,7 +9,13 @@ import { useBiometricGateStore } from "@/lib/biometric-gate-store";
 
 type GateStatus = "checking" | "locked" | "unlocked" | "unsupported";
 
-export function BiometricGate({ children }: { children: React.ReactNode }) {
+export function BiometricGate({
+  isNativeInitial,
+  children,
+}: {
+  isNativeInitial: boolean;
+  children: React.ReactNode;
+}) {
   const router = useRouter();
   const unlockedThisSession = useBiometricGateStore((state) => state.unlockedThisSession);
   const markUnlocked = useBiometricGateStore((state) => state.markUnlocked);
@@ -20,24 +26,39 @@ export function BiometricGate({ children }: { children: React.ReactNode }) {
   // re-prompt every time even seconds after the user last unlocked -
   // unlockedThisSession lives in a module-level store instead of component
   // state, so it survives that remount for as long as the app stays open.
-  // Capacitor.isNativePlatform() is a synchronous, on-device check (unlike
-  // whether biometrics are enabled, which requires an async plugin read
-  // below), so a plain browser resolves straight to "unsupported" with no
-  // flash - only a native app ever needs the "checking" state.
+  //
+  // isNativeInitial comes from the server (the fog_native_client cookie -
+  // see lib/platform.ts's isNativeClient()), deliberately not from calling
+  // Capacitor.isNativePlatform() directly in this initial-state computation:
+  // that call answers differently on the server (always "web", no bridge)
+  // than it does on an actual native client during hydration, so using it
+  // here broke hydration - the server-rendered children and the client's
+  // first render disagreed, and React's recovery from that mismatch showed
+  // both, stacked, until the next full client-side render cleared it. The
+  // cookie-derived prop is identical on both sides, so it can't cause that;
+  // corrected below from Capacitor's own check, same pattern
+  // components/SettingsToggles.tsx already uses for the same reason.
   const [status, setStatus] = useState<GateStatus>(() => {
-    if (!Capacitor.isNativePlatform()) return "unsupported";
+    if (!isNativeInitial) return "unsupported";
     return unlockedThisSession ? "unlocked" : "checking";
   });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Initial state already accounts for non-native/unlockedThisSession -
-    // nothing to (re-)check if either says so.
-    if (!Capacitor.isNativePlatform() || unlockedThisSession) return;
+    // Nothing to (re-)check if already unlocked this session.
+    if (unlockedThisSession) return;
 
     let cancelled = false;
 
     async function checkAvailability() {
+      // The real, authoritative check - client-only, runs after hydration,
+      // so it can never disagree with the server-rendered output (see the
+      // note above on isNativeInitial).
+      if (!Capacitor.isNativePlatform()) {
+        if (!cancelled) setStatus("unsupported");
+        return;
+      }
+
       // LocalSettingsCache.isUnlocked() is the one flag the native
       // pre-connectivity gate (Android), this gate and the offline islands'
       // own gate all read and write (SRS Section 9) - a device unlocked by
