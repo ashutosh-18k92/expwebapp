@@ -20,7 +20,7 @@ export default async function DashboardPage() {
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-5 p-6">
       <DeviceTokenSync />
-      <TopicSync notificationTopics={user.notificationTopics ?? DEFAULT_NOTIFICATION_TOPICS} />
+      <TopicSync notificationTopics={user.preferences?.notificationTopics ?? DEFAULT_NOTIFICATION_TOPICS} />
       <TimeZoneSync />
       <SettingsSync />
       <div className="flex items-center justify-between">

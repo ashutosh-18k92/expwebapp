@@ -51,7 +51,9 @@ export async function POST(request: Request) {
       passwordSalt: salt,
       firstName,
       dateOfBirth: parsedDateOfBirth,
-      notificationTopics: { essentials: true, promotions: false, feeds: false },
+      preferences: {
+        notificationTopics: { essentials: true, promotions: false, feeds: false },
+      },
       createdAt: new Date(),
     });
   } catch (error) {

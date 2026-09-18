@@ -9,6 +9,7 @@ import {
   type NotificationCategory,
 } from "@/lib/native-permissions";
 import { reconcileNotificationTopics } from "@/lib/reconcile-notification-topics";
+import { registerDevice } from "@/lib/register-device";
 import { getStrategies } from "@/lib/permission-strategies";
 import { readSettingsCache, writeSettingsCache } from "@/lib/settings-cache";
 import { flushPendingSettingsWrites, writeSettingOptimistically } from "@/lib/settings-sync";
@@ -52,6 +53,27 @@ export function SettingsToggles({
 
   const [locationGranted, setLocationGranted] = useState(false);
   const [notificationGranted, setNotificationGranted] = useState(false);
+  // This specific device's own stored preference (Mongo, on its `devices`
+  // row - SRS FR-2.9) - what the "Notifications" toggle actually shows and
+  // is freely switchable regardless of notificationGranted, unlike that raw
+  // OS/browser permission bit. Not known server-side ahead of render (SSR
+  // has no way to know which of this account's devices is loading the
+  // page), so this always starts at false and is corrected once
+  // ensureDeviceToken resolves in the mount effect, same shape as
+  // locationGranted/notificationGranted above. notificationGranted still
+  // matters here: it decides whether turning this on needs the OS
+  // permission primer first, and drives the reconciliation below that
+  // forces this back to off - and persists that - the moment the OS
+  // permission is found revoked.
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const notificationsEnabledRef = useRef(notificationsEnabled);
+  useEffect(() => {
+    notificationsEnabledRef.current = notificationsEnabled;
+  }, [notificationsEnabled]);
+  // This device's own push token, once known - set by ensureDeviceToken
+  // below. A plain ref, not state: nothing renders from it directly, it's
+  // only ever read from inside handlers/effects, never during render.
+  const deviceTokenRef = useRef<string | null>(null);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [topics, setTopics] = useState(notificationTopicsInitial);
@@ -139,9 +161,31 @@ export function SettingsToggles({
         // long after mount, after the customer's own in-session toggle
         // changes have moved `topics` away from that initial snapshot.
         if (actual) reconcileNotificationTopics(topicsRef.current);
+        // This device's own stored preference still says on, but the
+        // OS/browser permission underneath it is gone - most commonly, the
+        // customer revoked it from the device's own Settings while this
+        // screen stayed open. Bring the stored preference back in line with
+        // reality rather than leaving it claiming something that can no
+        // longer happen; also the one thing that stops
+        // fog-push-notification-service from still trying to send this
+        // specific device pushes it can never deliver. Silent - no error
+        // surfaced for this background correction; a failed write is simply
+        // retried by flushPendingSettingsWrites on the next mount, same as
+        // any other optimistic write. Skipped if this device's token isn't
+        // known yet - nothing to reconcile without one, and
+        // notificationsEnabled can't have been set to true without it
+        // either.
+        if (!granted && notificationsEnabledRef.current && deviceTokenRef.current) {
+          persistNotificationsEnabled(false, deviceTokenRef.current);
+        }
       });
     }
     refreshPermissionState();
+    // Learns whether THIS device already has notificationsEnabled set
+    // (SRS FR-2.9) - a no-op if OS/browser permission was never granted, in
+    // which case there's no token to register and nothing to learn (the
+    // toggle correctly stays at its default off).
+    ensureDeviceToken();
     if (actual) {
       BiometricPrimer.isAvailable()
         .then((result) => {
@@ -187,6 +231,14 @@ export function SettingsToggles({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", refreshPermissionState);
     };
+    // This effect is deliberately mount-only (see topicsRef/
+    // notificationsEnabledRef above for the same reasoning) - adding
+    // ensureDeviceToken here would re-run the whole effect, re-attaching
+    // listeners and re-running every permission check, on every render.
+    // Its only real dependency is `isNative`, the same state every other
+    // handler in this file already reads via getStrategies(isNative)
+    // outside of an effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notificationTopicsInitial, quietHoursInitial]);
 
   function closePrimer() {
@@ -197,8 +249,60 @@ export function SettingsToggles({
     if (next) setActivePrimer("location");
   }
 
-  function handleNotificationToggle(next: boolean) {
-    if (next) setActivePrimer("notifications");
+  // Shared by the toggle's own onChange, the primer's Allow flow, and the
+  // background reconciliation above - always sets local state immediately
+  // (optimistic) and persists in the background via lib/settings-sync.ts,
+  // against this device's own row (SRS FR-2.9), keyed by its token. Never
+  // shows an error itself; callers that represent a direct user action
+  // decide whether to surface one from the return value, since the
+  // background reconciliation call deliberately doesn't.
+  async function persistNotificationsEnabled(next: boolean, token: string): Promise<boolean> {
+    setNotificationsEnabled(next);
+    return writeSettingOptimistically("notifications-enabled", "/api/notifications/enabled", {
+      token,
+      enabled: next,
+    });
+  }
+
+  // Returns this device's already-known token (deviceTokenRef), or fetches
+  // and registers one if it doesn't have one yet - registration is what
+  // creates the `devices` row /api/notifications/enabled needs to already
+  // exist. Resolves to null if OS/browser permission isn't granted (no
+  // token to get) or registration fails; also learns and applies this
+  // device's own stored notificationsEnabled the first time it registers.
+  async function ensureDeviceToken(): Promise<string | null> {
+    if (deviceTokenRef.current) return deviceTokenRef.current;
+    const token = await getStrategies(isNative).notification.getDeviceToken();
+    if (!token) return null;
+    try {
+      const result = await registerDevice(token, isNative ? "native" : "web");
+      deviceTokenRef.current = token;
+      setNotificationsEnabled(result.notificationsEnabled);
+    } catch {
+      return null;
+    }
+    return token;
+  }
+
+  async function handleNotificationToggle(next: boolean) {
+    setError(null);
+    if (next && !notificationGranted) {
+      // Turning on for the first time (or after the OS/browser permission
+      // was revoked) needs that permission itself before this can mean
+      // anything - handleNotificationAllow persists the preference once
+      // that succeeds. Already-granted permission (e.g. this was switched
+      // off in-app before, without touching the OS permission) skips
+      // straight to persisting below.
+      setActivePrimer("notifications");
+      return;
+    }
+    const token = await ensureDeviceToken();
+    if (!token) {
+      setError("Couldn't save that notification setting. Try again.");
+      return;
+    }
+    const ok = await persistNotificationsEnabled(next, token);
+    if (!ok) setError("Couldn't save that notification setting - we'll keep retrying.");
   }
 
   async function handleBiometricToggle(next: boolean) {
@@ -250,6 +354,13 @@ export function SettingsToggles({
     if (isNative) {
       reconcileNotificationTopics(topics);
     }
+    const token = await ensureDeviceToken();
+    if (!token) {
+      setError("Couldn't save that notification setting. Try again.");
+      return;
+    }
+    const ok = await persistNotificationsEnabled(true, token);
+    if (!ok) setError("Couldn't save that notification setting - we'll keep retrying.");
   }
 
   async function handleTopicToggle(category: NotificationCategory, next: boolean) {
@@ -317,13 +428,8 @@ export function SettingsToggles({
     <div className="flex flex-col">
       <Toggle
         label="Notifications"
-        caption={
-          notificationGranted
-            ? "Managed in your device settings."
-            : "Get updates on claims, renewals and offers."
-        }
-        checked={notificationGranted}
-        disabled={notificationGranted}
+        caption="Get updates on claims, renewals and offers."
+        checked={notificationsEnabled}
         onChange={handleNotificationToggle}
       />
       {/*
@@ -339,7 +445,7 @@ export function SettingsToggles({
         subscribed device in one topic-wide call with no way to hold back
         an individual recipient's copy.
       */}
-      {notificationGranted && (
+      {notificationsEnabled && (
         <div className="ml-6 flex flex-col border-l border-slate-800 pl-4">
           <Toggle
             label="Essentials"

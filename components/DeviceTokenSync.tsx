@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
 import { getStrategies } from "@/lib/permission-strategies";
+import { registerDevice } from "@/lib/register-device";
 import { onForegroundMessage } from "@/lib/firebase-web";
 
 /**
@@ -26,11 +27,7 @@ export function DeviceTokenSync() {
       .notification.getDeviceToken()
       .then((token) => {
         if (cancelled || !token) return;
-        return fetch("/api/notifications/device-token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, platform: isNative ? "native" : "web" }),
-        });
+        return registerDevice(token, isNative ? "native" : "web");
       })
       .catch(() => {
         // Best-effort; the next app open will retry.

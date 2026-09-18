@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const db = await getDb();
   await db
     .collection<UserDoc>("users")
-    .updateOne({ _id: user._id }, { $set: { quietHours: { enabled, startTime, endTime } } });
+    .updateOne({ _id: user._id }, { $set: { "preferences.quietHours": { enabled, startTime, endTime } } });
 
   return NextResponse.json({ ok: true });
 }

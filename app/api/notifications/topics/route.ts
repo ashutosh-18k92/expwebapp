@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   const db = await getDb();
   await db
     .collection<UserDoc>("users")
-    .updateOne({ _id: user._id }, { $set: { [`notificationTopics.${category}`]: enabled } });
+    .updateOne({ _id: user._id }, { $set: { [`preferences.notificationTopics.${category}`]: enabled } });
 
   // Native subscribes/unsubscribes itself client-side (see
   // NotificationTopics in lib/native-permissions.ts) - this only ever

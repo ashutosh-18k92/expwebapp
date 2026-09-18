@@ -91,7 +91,9 @@ Every job that pushes to a customer (journey reminders, all twelve broadcast job
 Acceptance criteria:
 - One function decides send or withhold per recipient, given their quiet-hours state and the notification's category
 - Never gates the in-app record, only the push alert
-- Structured so a future cross-cutting rule (for example a global mute) has one place to be added
+- Structured so a future cross-cutting rule (for example a frequency cap) has one place to be added
+
+Note: briefly extended 2026-09-18 with a `notificationsEnabled` "global mute" check, as the account-wide master toggle this acceptance criteria's third bullet had anticipated - see FR-2.9. Reverted the same day, before that shipped anywhere: FR-2.9 was itself revised, the same day, to a per-device setting rather than an account-wide one (a customer's phone and browser can each have their own on/off state), so the check moved out of this per-recipient function entirely, to a per-device filter on `devices.notificationsEnabled` right before each `sendToToken` call in `broadcast.factory.ts`/`journey-reminder.factory.ts` instead. This function is back to quiet-hours only, as it was before that day.
 
 Files: `src/lib/notification-policy.ts`
 
@@ -144,7 +146,7 @@ Acceptance criteria:
 
 Status: Implemented
 
-A customer opts in or out of Essentials, Promotions and Feeds independently. The three toggles appear indented under the main Notifications toggle, and only once notification permission is actually granted.
+A customer opts in or out of Essentials, Promotions and Feeds independently. The three toggles appear indented under the main Notifications toggle, and only once that toggle is switched on (see FR-2.9 - this is the device's own stored preference, not a live read of OS/browser permission).
 
 Files: `components/SettingsToggles.tsx`
 
@@ -182,6 +184,8 @@ A customer's phone and browser can both hold a live push registration simultaneo
 
 Acceptance criteria:
 - Each device is a distinct record keyed by its own push token, tagged native or web
+
+Note: this per-device record is also where the Settings screen's "Notifications" toggle now lives (`notificationsEnabled`, FR-2.9) - a direct consequence of this design, since a customer's phone and browser needing genuinely separate registrations means they can genuinely need separate on/off states too.
 
 Files: `lib/db.ts` (`DeviceDoc`)
 
@@ -235,6 +239,27 @@ Acceptance criteria:
 - Stored as a plain string and a UTC-midnight `Date` respectively (`UserDoc.firstName`/`dateOfBirth`), both optional in the schema only because pre-existing accounts predate them
 
 Files: `lib/db.ts`, `app/register/page.tsx`, `app/api/auth/register/route.ts`, `app/account/page.tsx`, `components/ProfileForm.tsx`, `app/api/account/profile/route.ts`
+
+### FR-2.9 Notifications master toggle and device-permission reconciliation
+
+Status: Implemented (fixes a regression, then revised same day - see notes)
+
+The Settings screen's top-level "Notifications" toggle is this specific device's own stored preference (`DeviceDoc.notificationsEnabled`), freely switchable on or off at any time, rather than a read-only mirror of the OS/browser permission grant.
+
+Note (2026-09-18, first pass): the toggle had drifted into being disabled once permission was granted, showing "Managed in your device settings." instead of a real control - there was never a stored field behind it at all, only the live permission check. Fixed as a reported bug (the customer should be able to turn this on or off from the app, synced to MongoDB, independent of whatever the OS/browser permission happens to be), not a new ask. First built as `UserDoc.notificationsEnabled`, an account-wide field.
+
+Note (2026-09-18, same day, revised): moved from the account to the device the same day, before the account-wide version had been used anywhere - a customer's phone and browser can each have their own OS/browser permission state, so one shared account-level flag couldn't correctly represent both (a device without permission would otherwise force the *account's* flag off, silently turning off notifications for the customer's *other* devices too). `preferences.notificationTopics`/`preferences.quietHours` (FR-2.1/FR-2.2) stayed account-wide - they're genuinely the same across every device, unlike this - and moved from flat `UserDoc` fields into a nested `UserDoc.preferences` object in the same pass, so the "same across every device" group and the per-device settings read as two distinct things. A one-off `scripts/migrate-user-preferences.mjs` moved the dev database's three existing test accounts across, was run once against it, confirmed correct by reading the migrated documents back, and was then deleted - kept here as the record of how that data got to its current shape, not as a script anyone still needs to run.
+
+Acceptance criteria:
+- `DeviceDoc.notificationsEnabled` (optional, defaults to off - never backfilled from a device's existing OS/browser permission state, by product decision, since this is a brand-new field with no prior customer having ever seen or set it) persisted via `POST /api/notifications/enabled`, taking `{ token, enabled }` and matching the `devices` row by `{_id: token, userId}` so one account can never flip a device registered to a different one
+- Because this now lives on `devices`, not `users`, the Settings screen has no synchronous (SSR) way to know it ahead of render, unlike `preferences.notificationTopics`/`preferences.quietHours` - it starts at off and is corrected once this device's own token is known, the same shape as the live OS/browser permission checks (FR-2.5) it sits alongside
+- `lib/register-device.ts`'s `registerDevice()` (shared with `components/DeviceTokenSync.tsx`, which already registered this device's token on every dashboard mount) both upserts the `devices` row and returns its current `notificationsEnabled`, so Settings learns this device's own value the moment it can get a token, with no separate round trip
+- Turning the toggle on when OS/browser permission is already granted (e.g. it was switched off in-app before, without touching that permission) persists straight away, no primer shown again; turning it on for the first time still needs that permission via the existing "Turn on notifications" primer, and only persists once the primer succeeds and a device token is obtained/registered
+- Turning it off persists immediately - there is no way to programmatically revoke the OS/browser permission itself, so this is purely this device's own record of intent
+- Essentials/Promotions/Feeds (FR-2.1) stay visible only while this master toggle is on, rather than while OS/browser permission is granted - their own (account-wide) preferences are untouched by this toggle either way, so switching it back on later doesn't reset them
+- Reconciliation: whenever the live permission re-check (FR-2.5's mount/visibility/focus-triggered `refreshPermissionState`) finds the OS/browser permission no longer granted while this device's own preference is still on, it's set back to off and persisted via the same API route, silently (no error shown for this background correction) - this is also what stops fog-push-notification-service from continuing to try to send this specific device pushes it can no longer deliver (see that repo's `broadcast.factory.ts`/`journey-reminder.factory.ts`, which filter `devices` by `notificationsEnabled: true` directly, not through the shared `decideDispatch` function - see FR-1.5's note)
+
+Files: `lib/db.ts` (`DeviceDoc.notificationsEnabled`, `UserDoc.preferences`), `app/api/notifications/enabled/route.ts`, `app/api/notifications/device-token/route.ts`, `lib/register-device.ts` (new), `app/api/notifications/topics/route.ts`, `app/api/notifications/quiet-hours/route.ts`, `app/api/auth/register/route.ts`, `app/settings/page.tsx`, `app/dashboard/page.tsx`, `components/SettingsToggles.tsx`, `components/DeviceTokenSync.tsx`. `scripts/migrate-user-preferences.mjs` did the one-off data migration and was deleted once run and verified - see the note above.
 
 ---
 
@@ -696,6 +721,7 @@ Raised and consciously set aside during this build phase, not overlooked.
 - **Removing the account-level `biometricEnabled` copy removes its self-correction property.** Recorded in FR-9.1 and in `fog-mobile-app`'s README: previously a wrongly-flipped on-device value (for example, from a compromised third-party iframe, since every registered plugin is callable from any frame - see that README's caller-set discussion) would self-correct at the next online sync against Mongo. Now the device's own copy is the only copy, so a caller that silently disables it leaves it disabled until the customer notices and re-enables it from Settings. It cannot, either way, grant an unlock without the separate hardware `authenticate()` step still succeeding - accepted on that basis, not blocking.
 - **FR-10.1's native session renewal is verified against a local dev server and this repo's own local MongoDB, not the deployed environment.** The renewal logic was exercised directly over HTTP with a simulated native header/cookie against `pnpm dev` and the database configured in `.env.local`; it has not yet been triggered by a real native app cold-launch/page-load request, nor checked against whatever database the deployed environment actually uses.
 - **FR-2.5's 2026-09-18 focus/visibility permission re-sync fix has not been verified on device.** Checked by type-checking and lint only. It relies on the native Android WebView firing `visibilitychange` on the host Activity's own pause/resume the same way a browser tab does; if that assumption turns out wrong on a real device, the `window focus` listener added alongside it is the only remaining signal, and neither has been exercised against real OS permission revocation on an emulator or physical device yet.
+- **FR-2.9's per-device notifications toggle has not been verified on device, and defaulting it to off silently stops every existing device's pushes until it revisits Settings.** Checked by type-checking and lint only - not exercised against real permission grant/revoke on an emulator or device, against a real web-push token, or against fog-push-notification-service's actual per-device dispatch filtering end to end. Separately: since `devices.notificationsEnabled` is a brand-new field with no backfill from existing OS/browser permission state (by product decision - see FR-2.9's note), every device registered before this shipped reads as off until Settings is opened again on that same device, even if it already had working notifications. Low-risk today given FOG is pre-launch with only dummy test accounts/devices and every push job disabled by default (FR-1.1), but worth remembering before any real device exists. The now-deleted `scripts/migrate-user-preferences.mjs` addressed the separate `preferences` restructuring for the dev database's existing test accounts (run and verified 2026-09-18), but there is no equivalent backfill for this field - by design, matching the "default off" decision.
 - **A Chrome-specific notification permission report was diagnosed, not root-caused.** Firefox worked, Chrome did not respond to a permission request in one production report. This was traced to browser or profile-level permission state (an already-blocked origin, or Chrome's quiet-permission UI) rather than a defect in this codebase, and a clearer in-app error message was added regardless.
 - **Policy documents are served from Next.js's `public/` static directory, with no per-request authentication check on the file itself.** A policy PDF is technically fetchable by anyone who has, or guesses, its URL, regardless of who is signed in. This was a deliberate choice for the current testing phase against two dummy test accounts, not an oversight, and needs to be revisited (moving files to a private, server-only directory served through an authenticated route) before any real customer document is stored this way.
 - **FR-11.5's native offline availability has an emulator pass, not a physical-device or iOS pass.** Confirmed working on an Android emulator (Pixel_7a AVD) against the deployed origin: saving a policy document for offline use, the islands "My policies" tab listing it, and opening it in the device's PDF viewer. Not yet checked: a physical Android device, a large policy PDF against the plugin's 25MB cache cap, and anything on iOS (no `PolicyCache` counterpart exists there yet, mirroring FR-9.5's Android-first precedent).
