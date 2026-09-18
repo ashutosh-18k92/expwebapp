@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# generated fresh on every dev/build run - see scripts/write-build-version.mjs
+/build-version.json
+
 # production
 /build
 

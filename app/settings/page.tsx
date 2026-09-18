@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isNativeClient } from "@/lib/platform";
+import { getBuildVersion } from "@/lib/build-version";
 import { SettingsToggles } from "@/components/SettingsToggles";
 
 // Defensive default for a user doc predating notificationTopics.
@@ -15,6 +16,7 @@ export default async function SettingsPage() {
     redirect("/login");
   }
   const isNativeInitial = await isNativeClient();
+  const { appVersion, builtAt } = getBuildVersion();
 
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-5 p-6">
@@ -24,6 +26,9 @@ export default async function SettingsPage() {
         quietHoursInitial={user.quietHours ?? DEFAULT_QUIET_HOURS}
         isNativeInitial={isNativeInitial}
       />
+      <p className="text-center text-xs text-slate-400">
+        Version {appVersion} · Built {builtAt}
+      </p>
     </div>
   );
 }

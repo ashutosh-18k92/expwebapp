@@ -337,6 +337,24 @@ Interactive controls (switches, inputs) are drawn from shadcn/ui, and icons thro
 
 Files: `components/ui/`, `lucide-react`
 
+### FR-4.6 Build version display
+
+Status: Implemented (revised same day - see note)
+
+The Settings screen shows the running web build as plain text - `package.json`'s semantic version plus when this code was last built - so a support conversation or a bug report can pin down which build a customer is actually looking at.
+
+Note: originally an incrementing build number, hand-committed to the repo like a mobile app's versionCode. Revised the same day, before this shipped anywhere, to a build timestamp instead - simpler, and needs nobody to remember to commit anything.
+
+Acceptance criteria:
+- `scripts/write-build-version.mjs` stamps `build-version.json` with the current time, wired into both the `dev` and `build` npm scripts ahead of `next dev`/`next build` - the Settings screen always reflects when the running process was actually built/started, including in local dev
+- `build-version.json` is gitignored, not committed - regenerated fresh on every run, so there's nothing meaningful to track in git
+- Formatted in `en-GB` with a fixed `Europe/London` time zone, not the deploying host's own locale/zone, so the displayed time doesn't depend on where this happens to be deployed
+- Read directly off disk from the Settings page (a Server Component) rather than threaded through `next.config.ts`'s env-inlining, so this needs no separate client-bundling step; falls back to "unknown" rather than failing the page if `build-version.json` is missing (e.g. `next dev`/`next build` invoked directly, bypassing the package.json script)
+
+Note: this is plain build/version metadata, not a claim about the product or its cover - it doesn't need the financial-promotion DRAFT/Compliance-sign-off treatment the rest of this Settings screen's customer-facing copy does.
+
+Files: `build-version.json` (gitignored), `scripts/write-build-version.mjs`, `lib/build-version.ts`, `app/settings/page.tsx`, `package.json`
+
 ---
 
 ## 5. Journeys and notification history
