@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import {
   BiometricPrimer,
@@ -55,6 +55,14 @@ export function SettingsToggles({
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [topics, setTopics] = useState(notificationTopicsInitial);
+  // Kept in sync with `topics` so refreshPermissionState below - re-run
+  // later from the visibility/focus listeners, not just at mount - always
+  // reconciles against whatever the customer's topic choices actually are
+  // right now, not a stale closure over this component's first-mount value.
+  const topicsRef = useRef(topics);
+  useEffect(() => {
+    topicsRef.current = topics;
+  }, [topics]);
   const [quietHours, setQuietHours] = useState(quietHoursInitial);
   const [detectedTimeZone, setDetectedTimeZone] = useState<string | null>(null);
   const [activePrimer, setActivePrimer] = useState<PrimerScreen>(null);
@@ -102,23 +110,38 @@ export function SettingsToggles({
     // after a toggle, before its POST got a response.
     flushPendingSettingsWrites();
 
-    strategies.location.isGranted().then((granted) => {
-      if (cancelled) return;
-      setLocationGranted(granted);
-      writeSettingsCache({ locationGranted: granted });
-    });
-    strategies.notification.isGranted().then((granted) => {
-      if (cancelled) return;
-      setNotificationGranted(granted);
-      writeSettingsCache({ notificationGranted: granted });
-      setIsNative((prev) => (prev === actual ? prev : actual));
-      // Native self-manages its own FCM topic subscriptions on every mount
-      // (see reconcile-notification-topics.ts); a web device has no
-      // client-side subscribeToTopic API, so its reconciliation happens
-      // server-side instead - see /api/notifications/topics and
-      // /api/notifications/device-token.
-      if (actual) reconcileNotificationTopics(notificationTopicsInitial);
-    });
+    // Split out because it needs to run more than once: the OS/browser
+    // permission underneath these two toggles can be granted or revoked at
+    // any time this screen is sitting open - most commonly, the customer
+    // backgrounds this app to open the device's own Settings and flips a
+    // permission there, then switches straight back here without ever
+    // navigating away from (and back to) this screen. Neither platform
+    // pushes that change to us, so nothing re-runs the checks below on its
+    // own unless we ask for it - see the visibility/focus listeners further
+    // down.
+    function refreshPermissionState() {
+      strategies.location.isGranted().then((granted) => {
+        if (cancelled) return;
+        setLocationGranted(granted);
+        writeSettingsCache({ locationGranted: granted });
+      });
+      strategies.notification.isGranted().then((granted) => {
+        if (cancelled) return;
+        setNotificationGranted(granted);
+        writeSettingsCache({ notificationGranted: granted });
+        setIsNative((prev) => (prev === actual ? prev : actual));
+        // Native self-manages its own FCM topic subscriptions on every mount
+        // (see reconcile-notification-topics.ts); a web device has no
+        // client-side subscribeToTopic API, so its reconciliation happens
+        // server-side instead - see /api/notifications/topics and
+        // /api/notifications/device-token. Reads topicsRef rather than the
+        // notificationTopicsInitial prop directly, since this can run again
+        // long after mount, after the customer's own in-session toggle
+        // changes have moved `topics` away from that initial snapshot.
+        if (actual) reconcileNotificationTopics(topicsRef.current);
+      });
+    }
+    refreshPermissionState();
     if (actual) {
       BiometricPrimer.isAvailable()
         .then((result) => {
@@ -145,8 +168,24 @@ export function SettingsToggles({
       }
     });
 
+    // `visibilitychange` covers both a plain browser tab switch and this
+    // app's own native Android WebView, which (being a real Chromium
+    // WebView, same as the localStorage settings cache above relies on)
+    // fires this on the host Activity's own pause/resume; `focus` is kept
+    // alongside it as a second signal for whichever browser/WebView
+    // combination doesn't fire one of the two reliably - both handlers are
+    // idempotent, so a rare double-fire just re-runs the same read-only
+    // checks harmlessly.
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") refreshPermissionState();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", refreshPermissionState);
+
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", refreshPermissionState);
     };
   }, [notificationTopicsInitial, quietHoursInitial]);
 
