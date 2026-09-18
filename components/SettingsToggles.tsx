@@ -52,19 +52,16 @@ export function SettingsToggles({
   const [isNative, setIsNative] = useState(isNativeInitial);
 
   const [locationGranted, setLocationGranted] = useState(false);
-  const [notificationGranted, setNotificationGranted] = useState(false);
   // This specific device's own stored preference (Mongo, on its `devices`
   // row - SRS FR-2.9) - what the "Notifications" toggle actually shows and
-  // is freely switchable regardless of notificationGranted, unlike that raw
-  // OS/browser permission bit. Not known server-side ahead of render (SSR
-  // has no way to know which of this account's devices is loading the
-  // page), so this always starts at false and is corrected once
-  // ensureDeviceToken resolves in the mount effect, same shape as
-  // locationGranted/notificationGranted above. notificationGranted still
-  // matters here: it decides whether turning this on needs the OS
-  // permission primer first, and drives the reconciliation below that
-  // forces this back to off - and persists that - the moment the OS
-  // permission is found revoked.
+  // is freely switchable, unlike the raw OS/browser permission bit (there's
+  // no separate `notificationGranted` state to compare it against - turning
+  // this on always goes through the primer/requestPermission() regardless
+  // of the current permission state, see handleNotificationToggle). Not
+  // known server-side ahead of render (SSR has no way to know which of this
+  // account's devices is loading the page), so this always starts at false
+  // and is corrected once ensureDeviceToken resolves in the mount effect,
+  // same shape as locationGranted above.
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const notificationsEnabledRef = useRef(notificationsEnabled);
   useEffect(() => {
@@ -108,7 +105,6 @@ export function SettingsToggles({
       if (cancelled) return;
       const cached = readSettingsCache();
       if (cached?.locationGranted !== undefined) setLocationGranted(cached.locationGranted);
-      if (cached?.notificationGranted !== undefined) setNotificationGranted(cached.notificationGranted);
       if (actual && cached?.biometricAvailable !== undefined) setBiometricAvailable(cached.biometricAvailable);
       if (actual && cached?.biometricEnabled !== undefined) setBiometricEnabled(cached.biometricEnabled);
     });
@@ -149,8 +145,6 @@ export function SettingsToggles({
       });
       strategies.notification.isGranted().then((granted) => {
         if (cancelled) return;
-        setNotificationGranted(granted);
-        writeSettingsCache({ notificationGranted: granted });
         setIsNative((prev) => (prev === actual ? prev : actual));
         // Native self-manages its own FCM topic subscriptions on every mount
         // (see reconcile-notification-topics.ts); a web device has no
@@ -286,22 +280,27 @@ export function SettingsToggles({
 
   async function handleNotificationToggle(next: boolean) {
     setError(null);
-    if (next && !notificationGranted) {
-      // Turning on for the first time (or after the OS/browser permission
-      // was revoked) needs that permission itself before this can mean
-      // anything - handleNotificationAllow persists the preference once
-      // that succeeds. Already-granted permission (e.g. this was switched
-      // off in-app before, without touching the OS permission) skips
-      // straight to persisting below.
+    if (next) {
+      // Always goes through the primer, even when OS/browser permission is
+      // already granted - tapping "Enable Notifications" there still runs
+      // handleNotificationAllow's full flow (requestPermission(), then
+      // ensureDeviceToken()). A version of this that skipped straight to
+      // ensureDeviceToken() when already granted was tried and reverted the
+      // same day: with nothing else in that path showing any UI, a
+      // customer toggling this on saw no dialog, no confirmation, nothing
+      // at all - visibly worse than always showing the primer, even in the
+      // case where requestPermission() itself has nothing new to show.
       setActivePrimer("notifications");
       return;
     }
+    // Turning off - there is no way to programmatically revoke OS/browser
+    // permission, so this can persist straight away.
     const token = await ensureDeviceToken();
     if (!token) {
       setError("Couldn't save that notification setting. Try again.");
       return;
     }
-    const ok = await persistNotificationsEnabled(next, token);
+    const ok = await persistNotificationsEnabled(false, token);
     if (!ok) setError("Couldn't save that notification setting - we'll keep retrying.");
   }
 
@@ -333,7 +332,6 @@ export function SettingsToggles({
   async function handleNotificationAllow() {
     setError(null);
     const granted = await getStrategies(isNative).notification.requestPermission();
-    setNotificationGranted(granted);
     setActivePrimer(null);
 
     if (!granted) {

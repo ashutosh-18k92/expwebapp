@@ -6,7 +6,6 @@ export interface CachedSettingsState {
   biometricEnabled: boolean;
   biometricAvailable: boolean;
   locationGranted: boolean;
-  notificationGranted: boolean;
   quietHours: QuietHoursPreference;
 }
 
