@@ -29,7 +29,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   try {
     const pdf = await loadPolicyDocument(policy.userId, policy.fileName);
     await sendPolicyDocumentEmail({
-      to: user.email,
+      //TODO: configure the domain to send emails
+      to: "ashutosh.18k92@gmail.com",//user.email,
       policyDisplayName: policy.displayName,
       attachmentFileName: `${policy.displayName}${fileExtension(policy.fileName)}`,
       pdf,
