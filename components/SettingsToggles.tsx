@@ -143,7 +143,7 @@ export function SettingsToggles({
         setLocationGranted(granted);
         writeSettingsCache({ locationGranted: granted });
       });
-      strategies.notification.isGranted().then((granted) => {
+      strategies.notification.isGranted().then(async (granted) => {
         if (cancelled) return;
         setIsNative((prev) => (prev === actual ? prev : actual));
         // Native self-manages its own FCM topic subscriptions on every mount
@@ -155,6 +155,15 @@ export function SettingsToggles({
         // long after mount, after the customer's own in-session toggle
         // changes have moved `topics` away from that initial snapshot.
         if (actual) reconcileNotificationTopics(topicsRef.current);
+        // Learns whether THIS device already has notificationsEnabled set
+        // (SRS FR-2.9) - a no-op if OS/browser permission was never
+        // granted, in which case there's no token to register and nothing
+        // to learn (the toggle correctly stays at its default off).
+        // Awaited (not fire-and-forget) so the reconciliation check right
+        // below always sees this settle first - see ensureDeviceToken's own
+        // comment for the race this guards against.
+        const device = await ensureDeviceToken();
+        if (cancelled) return;
         // This device's own stored preference still says on, but the
         // OS/browser permission underneath it is gone - most commonly, the
         // customer revoked it from the device's own Settings while this
@@ -165,21 +174,13 @@ export function SettingsToggles({
         // specific device pushes it can never deliver. Silent - no error
         // surfaced for this background correction; a failed write is simply
         // retried by flushPendingSettingsWrites on the next mount, same as
-        // any other optimistic write. Skipped if this device's token isn't
-        // known yet - nothing to reconcile without one, and
-        // notificationsEnabled can't have been set to true without it
-        // either.
-        if (!granted && notificationsEnabledRef.current && deviceTokenRef.current) {
-          persistNotificationsEnabled(false, deviceTokenRef.current);
+        // any other optimistic write.
+        if (!granted && device?.notificationsEnabled) {
+          persistNotificationsEnabled(false, device.token);
         }
       });
     }
     refreshPermissionState();
-    // Learns whether THIS device already has notificationsEnabled set
-    // (SRS FR-2.9) - a no-op if OS/browser permission was never granted, in
-    // which case there's no token to register and nothing to learn (the
-    // toggle correctly stays at its default off).
-    ensureDeviceToken();
     if (actual) {
       BiometricPrimer.isAvailable()
         .then((result) => {
@@ -258,24 +259,37 @@ export function SettingsToggles({
     });
   }
 
-  // Returns this device's already-known token (deviceTokenRef), or fetches
-  // and registers one if it doesn't have one yet - registration is what
-  // creates the `devices` row /api/notifications/enabled needs to already
-  // exist. Resolves to null if OS/browser permission isn't granted (no
-  // token to get) or registration fails; also learns and applies this
-  // device's own stored notificationsEnabled the first time it registers.
-  async function ensureDeviceToken(): Promise<string | null> {
-    if (deviceTokenRef.current) return deviceTokenRef.current;
+  // Returns this device's already-known token (deviceTokenRef) and its
+  // last-resolved notificationsEnabled, or fetches and registers a token if
+  // it doesn't have one yet - registration is what creates the `devices`
+  // row /api/notifications/enabled needs to already exist. Resolves to
+  // null if OS/browser permission isn't granted (no token to get) or
+  // registration fails.
+  //
+  // Returns notificationsEnabled directly from the just-awaited result
+  // (not read back via notificationsEnabledRef) deliberately: a caller
+  // that awaits this and then immediately checks the ref (as
+  // refreshPermissionState's reconciliation below does) can't rely on
+  // React having already run the effect that syncs the ref from state by
+  // the time the await resolves - the notification.isGranted() check and
+  // this function's own HTTP round trip resolve independently, in no
+  // guaranteed order, so a ref-read immediately after this resolves could
+  // still see a stale value. Not yet verified against this exact race on a
+  // real device - see SRS.md.
+  async function ensureDeviceToken(): Promise<{ token: string; notificationsEnabled: boolean } | null> {
+    if (deviceTokenRef.current) {
+      return { token: deviceTokenRef.current, notificationsEnabled: notificationsEnabledRef.current };
+    }
     const token = await getStrategies(isNative).notification.getDeviceToken();
     if (!token) return null;
     try {
       const result = await registerDevice(token, isNative ? "native" : "web");
       deviceTokenRef.current = token;
       setNotificationsEnabled(result.notificationsEnabled);
+      return { token, notificationsEnabled: result.notificationsEnabled };
     } catch {
       return null;
     }
-    return token;
   }
 
   async function handleNotificationToggle(next: boolean) {
@@ -295,12 +309,12 @@ export function SettingsToggles({
     }
     // Turning off - there is no way to programmatically revoke OS/browser
     // permission, so this can persist straight away.
-    const token = await ensureDeviceToken();
-    if (!token) {
+    const device = await ensureDeviceToken();
+    if (!device) {
       setError("Couldn't save that notification setting. Try again.");
       return;
     }
-    const ok = await persistNotificationsEnabled(false, token);
+    const ok = await persistNotificationsEnabled(false, device.token);
     if (!ok) setError("Couldn't save that notification setting - we'll keep retrying.");
   }
 
@@ -352,12 +366,12 @@ export function SettingsToggles({
     if (isNative) {
       reconcileNotificationTopics(topics);
     }
-    const token = await ensureDeviceToken();
-    if (!token) {
+    const device = await ensureDeviceToken();
+    if (!device) {
       setError("Couldn't save that notification setting. Try again.");
       return;
     }
-    const ok = await persistNotificationsEnabled(true, token);
+    const ok = await persistNotificationsEnabled(true, device.token);
     if (!ok) setError("Couldn't save that notification setting - we'll keep retrying.");
   }
 
