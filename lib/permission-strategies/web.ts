@@ -12,6 +12,16 @@ export const webNotificationStrategy: NotificationStrategy = {
     return result === "granted";
   },
   async getDeviceToken() {
+    // Firebase's own getToken() asks the browser for permission itself
+    // when Notification.permission is still "default" - callers here
+    // (DeviceTokenSync on every dashboard mount, SettingsToggles on every
+    // Settings mount/focus/visibility regain) run long before the customer
+    // has ever seen the in-app "Turn on notifications" primer, so without
+    // this guard the very first dashboard visit could pop the browser's
+    // native permission dialog unprompted. Only fetch/refresh a token once
+    // permission is already granted - via the primer's requestPermission()
+    // call, never from here.
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return null;
     return getWebPushToken();
   },
 };
