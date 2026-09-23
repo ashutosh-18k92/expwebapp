@@ -1,14 +1,14 @@
 # FOG Experience Platform: Software Requirements Specification
 
 - Doc ID: FOG-SRS-EXP-01
-- Version: 1.0 (Sections 1-8 reconstructed from implementation history; Sections 9-10 were forward-specified, then built and partly device-verified against that spec in the same pass, though FR-2.7/FR-9.1 were later revised (2026-09-17) to a device-only biometric preference, and FR-9.7 added on top (2026-09-18) to bridge the resulting native page-load gap - both revisions device-verified; Section 11 was forward-specified and built across three passes - web download, native/offline, then a same-day revision replacing the download with email delivery (a password-protection addition to that revision was specified, built and withdrawn the same day, before verification - see FR-11.6); Section 12 is forward-specified only, not yet built - planned for a later session)
+- Version: 1.0 (Sections 1-8 reconstructed from implementation history; Sections 9-10 were forward-specified, then built and partly device-verified against that spec in the same pass, though FR-2.7/FR-9.1 were later revised (2026-09-17) to a device-only biometric preference, and FR-9.7 added on top (2026-09-18) to bridge the resulting native page-load gap - both revisions device-verified; Section 11 was forward-specified and built across three passes - web download, native/offline, then a same-day revision replacing the download with email delivery (a password-protection addition to that revision was specified, built and withdrawn the same day, before verification - see FR-11.6); Section 12 was forward-specified only at first - FR-12.2 was then scoped and built 2026-09-22, once its own open scope questions were resolved, and is type-checked/linted but not yet device-verified; FR-12.1 remains not started)
 - Status: Draft, unreviewed
 - Systems in scope: `exp-webapp`, `fog-push-notification-service`, `fog-mobile-app`
 - Brands: Agua, Bounce, Centrd (each its own deployment on Crayeres)
 
 ## About this document
 
-This lists the notification, settings, permissions and navigation features built across the three repositories, written as requirements rather than a change log. Sections 1 to 8 were reconstructed after the fact from an implementation session, not authored ahead of the work they describe, and none of it has been reviewed by engineering or Compliance. Treat every "Implemented" status as a claim to verify against the current codebase before relying on it, and every quoted customer-facing string as DRAFT pending sign-off, not approved copy. Sections 9 and 10 are the exception: both were specified ahead of implementation, then implemented and, for the parts noted "verified on device", exercised end to end on a live Android emulator against a real deployed environment and a real MongoDB - not merely type-checked or unit-tested. Section 11 was specified ahead of implementation too: its web scope (`exp-webapp`) was built first, and its native/offline scope followed in a second pass against `fog-mobile-app`, confirmed working end to end on an Android emulator. A same-day third pass then revised FR-11.4 to email delivery once browser downloads were judged unsafe for this kind of document; a password-protection addition to that same pass (FR-11.6, IronPDF) was specified and built but withdrawn the same day, before real credentials existed to verify it, so it is recorded as removed rather than implemented. FR-11.4 itself builds cleanly but is honestly marked as blocked on real Resend credentials rather than device-verified. Section 12 is specified ahead of implementation and not yet built at all - captured here as agreed requirements for a later session, not a claim of anything working.
+This lists the notification, settings, permissions and navigation features built across the three repositories, written as requirements rather than a change log. Sections 1 to 8 were reconstructed after the fact from an implementation session, not authored ahead of the work they describe, and none of it has been reviewed by engineering or Compliance. Treat every "Implemented" status as a claim to verify against the current codebase before relying on it, and every quoted customer-facing string as DRAFT pending sign-off, not approved copy. Sections 9 and 10 are the exception: both were specified ahead of implementation, then implemented and, for the parts noted "verified on device", exercised end to end on a live Android emulator against a real deployed environment and a real MongoDB - not merely type-checked or unit-tested. Section 11 was specified ahead of implementation too: its web scope (`exp-webapp`) was built first, and its native/offline scope followed in a second pass against `fog-mobile-app`, confirmed working end to end on an Android emulator. A same-day third pass then revised FR-11.4 to email delivery once browser downloads were judged unsafe for this kind of document; a password-protection addition to that same pass (FR-11.6, IronPDF) was specified and built but withdrawn the same day, before real credentials existed to verify it, so it is recorded as removed rather than implemented. FR-11.4 itself builds cleanly but is honestly marked as blocked on real Resend credentials rather than device-verified. Section 12 was specified ahead of implementation, as agreed requirements for a later session: FR-12.2 was that later session, scoped and built 2026-09-22 (type-checked and linted, not yet exercised on device or emulator); FR-12.1 is still just the agreed requirement, not yet built at all.
 
 FOGIL (company 17037311) is the FCA-authorised entity behind the Agua, Bounce and Centrd brands. FOG is pre-launch: nothing in this document has run against live customers or production traffic.
 
@@ -25,7 +25,7 @@ FOGIL (company 17037311) is the FCA-authorised entity behind the Agua, Bounce an
 9. [Unified biometric gateway](#9-unified-biometric-gateway)
 10. [Native session persistence](#10-native-session-persistence)
 11. [Customer policy documents](#11-customer-policy-documents)
-12. [Planned: live connectivity handling and uninstall data hygiene](#12-planned-live-connectivity-handling-and-uninstall-data-hygiene)
+12. [Live connectivity handling and device handoff data hygiene](#12-live-connectivity-handling-and-device-handoff-data-hygiene)
 13. [Known limitations and deferred work](#13-known-limitations-and-deferred-work)
 
 ---
@@ -511,7 +511,9 @@ Acceptance criteria:
 
 Verified end to end: unlocking the native gate (FR-9.5) with a fingerprint, then loading the remote origin, landed directly on the Dashboard with no second "Confirm it's you" prompt from the online gate - confirming FR-9.6's read of this same flag works as designed.
 
-Files: `markUnlocked`/`isUnlocked`/`resetUnlock` on `LocalSettingsCachePlugin`, Android and iOS (fog-mobile-app); `components/BiometricGate.tsx` calls the native reset alongside the existing JS reset on logout (exp-webapp)
+Note (2026-09-22): found, while building FR-12.2, that `components/LogoutButton.tsx` - the plain Log out button on the Account page, a separate sign-out path from this gate's own `handleLogOut` - never called `resetUnlock()` or the JS `biometric-gate-store` reset described in the acceptance criteria above. Only this gate's own logout path did. Fixed to match; see FR-12.2's own note for the fix.
+
+Files: `markUnlocked`/`isUnlocked`/`resetUnlock` on `LocalSettingsCachePlugin`, Android and iOS (fog-mobile-app); `components/BiometricGate.tsx` calls the native reset alongside the existing JS reset on logout, as does `components/LogoutButton.tsx` since 2026-09-22 (exp-webapp)
 
 ### FR-9.3 Offline biometric gate UI (removed)
 
@@ -677,9 +679,9 @@ Kept here, not deleted from this document, as the record of what was specified, 
 
 ---
 
-## 12. Planned: live connectivity handling and uninstall data hygiene
+## 12. Live connectivity handling and device handoff data hygiene
 
-`fog-mobile-app`: two follow-up requirements agreed on 2026-09-16, after Section 11's native pass was confirmed working. Specified here ahead of implementation, in the same spirit as Sections 9-11 before they were built - status below is honest about it: nothing in this section is built yet.
+`fog-mobile-app`, `exp-webapp`: two follow-up requirements agreed on 2026-09-16, after Section 11's native pass was confirmed working. Specified here ahead of implementation, in the same spirit as Sections 9-11. FR-12.2's own open scope questions were resolved and it was built 2026-09-22; FR-12.1 remains not started.
 
 ### FR-12.1 Live online-to-offline transition (native)
 
@@ -698,19 +700,28 @@ To work out before this is built, not decided yet:
 
 Files: likely `MainActivity.java`, `FogReachability.java`, `FogShellPlugin.java` (`fog-mobile-app`, Android) - not started
 
-### FR-12.2 Sign-out-before-uninstall ritual and full local data wipe
+### FR-12.2 Sign-out-and-prepare-for-removal action, and device handoff data hygiene
 
-Status: Not started - planned for a later session
+Status: Implemented (scope resolved 2026-09-22 - see note), type-checked and linted only, not yet verified on device
 
-Requirement as raised: prompt a customer to sign out before they uninstall the app, and when that happens, wipe every local record and cache the app holds.
+Requirement as raised, kept for the audit trail: prompt a customer to sign out before they uninstall the app, and when that happens, wipe every local record and cache the app holds. Neither Android nor iOS gives an app a hook that runs as it is being uninstalled - by the time the OS could tell an app "you are about to be removed," that app's own process is already gone, so nothing can force a logout or a wipe as a genuine precondition of uninstalling. The literal "ask before uninstall happens" framing was never achievable as stated on either platform.
 
-Flag before this is designed, not a reason to drop the requirement: neither Android nor iOS gives an app a hook that runs as it is being uninstalled - by the time the OS could tell an app "you are about to be removed," that app's own process is already gone, so nothing can force a logout or a wipe as a genuine precondition of uninstalling. The literal "ask before uninstall happens" framing is not achievable as stated on either platform; it needs reframing before it is built. Threads worth pulling on next session, not decided yet:
-- A visible "Sign out and prepare for removal" action in Settings that a customer is prompted (once, or persistently) to use before uninstalling, that explicitly signs out and clears every native cache this app holds today (`LocalSettingsCache`'s biometric flag and unlock state, FR-9.1/FR-9.2; `PolicyCache`'s saved documents, FR-11.5) - offered and prompted, not enforced, since it cannot be enforced
-- On Android, app-private storage (`SharedPreferences`, internal `filesDir`, which is where both `LocalSettingsCache` and `PolicyCache` write today) is already wiped by the OS on a genuine uninstall as standard platform behaviour - the "wipe cache data" half of this ask may already be satisfied for a real uninstall as-is, which would narrow the real open problem to the sign-out prompt and the reinstall-or-handed-to-someone-else case, not a wipe the app needs to build itself
-- Needs a scope decision next session: is this about a genuine OS uninstall (where the platform likely already clears app-private storage), or about a customer switching accounts or handing the device on without uninstalling (a case FR-11.5's existing sign-out-clears-`PolicyCache` behaviour, and the equivalent for `LocalSettingsCache`, already cover)? The requirement as raised reads like the former; the behaviour that is actually buildable and already partly exists is the latter
-- Whichever direction this takes, treat a cache as untrusted at next launch rather than as a guarantee sign-out happened first - the same discipline `LocalSettingsCache`'s biometric flag already follows (corrected at every online sync, never the source of truth)
+Note (2026-09-22): the scope questions this FR was left with are resolved as follows. This is treated as the device handoff / account switch case, not a genuine OS uninstall - on Android, app-private storage (`SharedPreferences`, internal `filesDir`, where `LocalSettingsCache` and `PolicyCache` both write) is already wiped by the platform on a real uninstall, so nothing further is owed for that case. The buildable, useful half of the original ask is an explicit, customer-initiated action a customer can use before uninstalling or before handing the device to someone else - offered, not enforced, since it cannot be enforced.
 
-Files: not yet determined
+Built as a "Sign out and prepare for removal" action on the Account page, next to the existing Log out button. Native only - on web there is no equivalent on-device cache beyond the session cookie, which a plain sign-out already clears.
+
+Acceptance criteria:
+- A confirmation step states plainly what happens before anything is cleared, rather than acting on a single tap
+- Clears `LocalSettingsCache`'s biometric-enabled flag (via the same `setBiometricEnabled({enabled: false})` the Settings toggle already uses - no new native plugin method was needed) and its process-lifetime unlock flag (`resetUnlock()`), and clears `PolicyCache`'s saved policy documents (`clearCache()`), then signs out through the existing `/api/auth/logout` route
+- Hidden on web and during server render, corrected to native via the same `isNativeInitial` cookie / `useEffect` pattern `BiometricGate.tsx` and `SettingsToggles.tsx` already use (FR-9.6), so it cannot reintroduce that hydration mismatch
+- A failure partway through clearing surfaces an inline error and leaves the customer able to retry or fall back to the plain Log out button, rather than silently signing out with some caches left behind
+- Treats each cache as something to actively clear on this explicit action, not a guarantee that sign-out alone already handled it - the same discipline `LocalSettingsCache`'s biometric flag already follows elsewhere (corrected at every online sync, never assumed correct)
+
+Found and fixed on the same pass, not part of the original ask: `components/LogoutButton.tsx` (the plain Log out button on the Account page) cleared `PolicyCache` on sign-out but never reset the native unlock flag (FR-9.2) or the JS-side `biometric-gate-store`, unlike `BiometricGate.tsx`'s own logout path. A real gap, not hypothetical: a different customer signing in next on the same device/browser tab, without the app process restarting, could have inherited an already-unlocked gate. Brought to parity with `BiometricGate.tsx`'s `handleLogOut` - see FR-9.2's own note.
+
+Not yet verified on device: built, type-checked and linted only, under the same emulator-testing caveat the rest of this document carries (see Section 13) - exercising this against a real device needs either a fresh deploy or a `fog-mobile-app` rebuild pointed at a local server.
+
+Files: `components/PrepareForRemovalButton.tsx` (new), `app/account/page.tsx`, `components/LogoutButton.tsx` (exp-webapp)
 
 ---
 
@@ -734,5 +745,6 @@ Raised and consciously set aside during this build phase, not overlooked.
 - **Policy documents are served from Next.js's `public/` static directory, with no per-request authentication check on the file itself.** A policy PDF is technically fetchable by anyone who has, or guesses, its URL, regardless of who is signed in. This was a deliberate choice for the current testing phase against two dummy test accounts, not an oversight, and needs to be revisited (moving files to a private, server-only directory served through an authenticated route) before any real customer document is stored this way.
 - **FR-11.5's native offline availability has an emulator pass, not a physical-device or iOS pass.** Confirmed working on an Android emulator (Pixel_7a AVD) against the deployed origin: saving a policy document for offline use, the islands "My policies" tab listing it, and opening it in the device's PDF viewer. Not yet checked: a physical Android device, a large policy PDF against the plugin's 25MB cache cap, and anything on iOS (no `PolicyCache` counterpart exists there yet, mirroring FR-9.5's Android-first precedent).
 - **Policy metadata has no admin/back-office authoring flow.** Records are written directly into MongoDB today, via `scripts/seed-policies.mjs` for the two test accounts built against. That is a dev convenience, not viable once there is a genuine operational process for adding a customer's policy documents.
-- **A live connectivity-loss transition and an uninstall data-hygiene ritual are agreed requirements, not yet built.** See [Section 12](#12-planned-live-connectivity-handling-and-uninstall-data-hygiene) (FR-12.1, FR-12.2) for what is understood so far, including why the uninstall requirement as raised needs reframing before it can be built at all - neither Android nor iOS lets an app hook its own uninstall.
+- **A live connectivity-loss transition (FR-12.1) is an agreed requirement, not yet built.** See [Section 12](#12-live-connectivity-handling-and-device-handoff-data-hygiene) for what is understood so far.
+- **FR-12.2's "Sign out and prepare for removal" action has not been verified on device.** Built, type-checked and linted only - not yet exercised against a real device/emulator, and (per the emulator-testing note above) not testable against local changes without either a fresh deploy or a `fog-mobile-app` rebuild pointed at a local server. It is also, by design, not a true uninstall hook - see FR-12.2's own note on why that framing was reframed to an explicit customer action for the device handoff / account switch case, with the genuine-OS-uninstall case left to the platform's own app-private storage wipe.
 - **FR-11.4's email delivery has no real credentials configured anywhere yet.** `RESEND_API_KEY` and `EMAIL_FROM` are both absent from every environment, so the actual send call has never been exercised - only compiled and built. Needs a real Resend account with a verified sending domain before this can be verified further.
