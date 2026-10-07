@@ -1,4 +1,5 @@
 import { MongoClient, ServerApiVersion, type Db } from "mongodb";
+import type { NotificationTopicCatalogEntry } from "@/lib/notification-topics-catalog";
 
 const DB_NAME = process.env.MONGODB_DB_NAME || "exp_webapp";
 const EMAIL_COLLATION = { locale: "en", strength: 2 } as const;
@@ -39,6 +40,10 @@ async function ensureIndexes(db: Db): Promise<void> {
     db.collection("notifications").createIndex({ userId: 1, createdAt: -1 }),
     db.collection("devices").createIndex({ userId: 1 }),
     db.collection("policies").createIndex({ userId: 1 }),
+    // Multikey index (Mongo builds this automatically for an array field) -
+    // serves the array-membership filter fog-push-notification-service runs
+    // per catalog topic (preferences.subscribedTopics: topicId).
+    db.collection("users").createIndex({ "preferences.subscribedTopics": 1 }),
   ]);
 }
 
@@ -56,10 +61,21 @@ export function emailCollation() {
   return { collation: EMAIL_COLLATION };
 }
 
-export interface NotificationTopicPreferences {
-  essentials: boolean;
-  promotions: boolean;
-  feeds: boolean;
+/**
+ * Shared helper so "the brand's catalog, sorted for display" is one Mongo
+ * call reused by every caller (the topics route, the settings/dashboard
+ * pages, registration) instead of four independently hand-written
+ * .find({}).sort({sortOrder:1}) calls that can drift.
+ */
+export async function getNotificationTopicsCatalog(db: Db): Promise<NotificationTopicDoc[]> {
+  return db.collection<NotificationTopicDoc>("notification_topics").find({}).sort({ sortOrder: 1 }).toArray();
+}
+
+export interface NotificationTopicDoc extends NotificationTopicCatalogEntry {
+  cron: string; // consumed by fog-push-notification-service's scheduler
+  enabled: boolean; // gates whether the broadcast job is scheduled (replaces ENABLE_<BRAND>_<CATEGORY>_BROADCAST_JOB)
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface QuietHoursSettings {
@@ -74,7 +90,7 @@ export interface QuietHoursSettings {
 // tracks separately. Nested under UserDoc.preferences rather than kept as
 // flat top-level fields, so this account-level group reads as one thing.
 export interface UserPreferences {
-  notificationTopics: NotificationTopicPreferences;
+  subscribedTopics: string[];
   quietHours?: QuietHoursSettings;
 }
 
@@ -103,7 +119,7 @@ export interface UserDoc {
   // IANA identifier, e.g. "Europe/London" - kept current by a client-side
   // sync on every app open (see components/TimeZoneSync.tsx), independent
   // of whether quietHours is enabled. Deliberately not nested under
-  // preferences above - unlike notificationTopics/quietHours this isn't a
+  // preferences above - unlike subscribedTopics/quietHours this isn't a
   // customer choice, just a detected fact about the device last used.
   timeZone?: string;
   createdAt: Date;

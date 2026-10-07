@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { Settings, User, ArrowLeftRight, Plane, FileText } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getDb, getNotificationTopicsCatalog } from "@/lib/db";
+import { defaultSubscribedTopicIds } from "@/lib/notification-topics-catalog";
 import { NotificationBell } from "@/components/NotificationBell";
 import { DeviceTokenSync } from "@/components/DeviceTokenSync";
 import { TopicSync } from "@/components/TopicSync";
@@ -8,19 +10,21 @@ import { TimeZoneSync } from "@/components/TimeZoneSync";
 import { SettingsSync } from "@/components/SettingsSync";
 import { DashboardCard } from "@/components/DashboardCard";
 
-// Defensive default for a user doc predating notificationTopics.
-const DEFAULT_NOTIFICATION_TOPICS = { essentials: true, promotions: false, feeds: false };
-
 export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user) {
     redirect("/login");
   }
+  const db = await getDb();
+  const topicsCatalog = await getNotificationTopicsCatalog(db);
 
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-5 p-6">
       <DeviceTokenSync />
-      <TopicSync notificationTopics={user.preferences?.notificationTopics ?? DEFAULT_NOTIFICATION_TOPICS} />
+      <TopicSync
+        subscribedTopics={user.preferences?.subscribedTopics ?? defaultSubscribedTopicIds(topicsCatalog)}
+        topicsCatalog={topicsCatalog}
+      />
       <TimeZoneSync />
       <SettingsSync />
       <div className="flex items-center justify-between">

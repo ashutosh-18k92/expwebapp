@@ -2,17 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
-import {
-  BiometricPrimer,
-  LocalSettingsCache,
-  NotificationTopics,
-  type NotificationCategory,
-} from "@/lib/native-permissions";
+import { BiometricPrimer, LocalSettingsCache, NotificationTopics } from "@/lib/native-permissions";
 import { reconcileNotificationTopics } from "@/lib/reconcile-notification-topics";
 import { registerDevice } from "@/lib/register-device";
 import { getStrategies } from "@/lib/permission-strategies";
 import { readSettingsCache, writeSettingsCache } from "@/lib/settings-cache";
 import { flushPendingSettingsWrites, writeSettingOptimistically } from "@/lib/settings-sync";
+import type { NotificationTopicCatalogEntry } from "@/lib/notification-topics-catalog";
 import {
   BiometricIcon,
   LocationIcon,
@@ -24,12 +20,6 @@ import { Input } from "@/components/ui/input";
 
 type PrimerScreen = "location" | "notifications" | "biometrics" | null;
 
-export interface NotificationTopicPreferences {
-  essentials: boolean;
-  promotions: boolean;
-  feeds: boolean;
-}
-
 export interface QuietHoursPreference {
   enabled: boolean;
   startTime: string; // "HH:mm"
@@ -37,11 +27,13 @@ export interface QuietHoursPreference {
 }
 
 export function SettingsToggles({
-  notificationTopicsInitial,
+  topicsCatalog,
+  subscribedTopicsInitial,
   quietHoursInitial,
   isNativeInitial,
 }: {
-  notificationTopicsInitial: NotificationTopicPreferences;
+  topicsCatalog: NotificationTopicCatalogEntry[];
+  subscribedTopicsInitial: string[];
   quietHoursInitial: QuietHoursPreference;
   isNativeInitial: boolean;
 }) {
@@ -73,15 +65,16 @@ export function SettingsToggles({
   const deviceTokenRef = useRef<string | null>(null);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
-  const [topics, setTopics] = useState(notificationTopicsInitial);
-  // Kept in sync with `topics` so refreshPermissionState below - re-run
-  // later from the visibility/focus listeners, not just at mount - always
-  // reconciles against whatever the customer's topic choices actually are
-  // right now, not a stale closure over this component's first-mount value.
-  const topicsRef = useRef(topics);
+  const [subscribedTopics, setSubscribedTopics] = useState(subscribedTopicsInitial);
+  // Kept in sync with `subscribedTopics` so refreshPermissionState below -
+  // re-run later from the visibility/focus listeners, not just at mount -
+  // always reconciles against whatever the customer's topic choices
+  // actually are right now, not a stale closure over this component's
+  // first-mount value.
+  const subscribedTopicsRef = useRef(subscribedTopics);
   useEffect(() => {
-    topicsRef.current = topics;
-  }, [topics]);
+    subscribedTopicsRef.current = subscribedTopics;
+  }, [subscribedTopics]);
   const [quietHours, setQuietHours] = useState(quietHoursInitial);
   const [detectedTimeZone, setDetectedTimeZone] = useState<string | null>(null);
   const [activePrimer, setActivePrimer] = useState<PrimerScreen>(null);
@@ -150,11 +143,12 @@ export function SettingsToggles({
         // (see reconcile-notification-topics.ts); a web device has no
         // client-side subscribeToTopic API, so its reconciliation happens
         // server-side instead - see /api/notifications/topics and
-        // /api/notifications/device-token. Reads topicsRef rather than the
-        // notificationTopicsInitial prop directly, since this can run again
-        // long after mount, after the customer's own in-session toggle
-        // changes have moved `topics` away from that initial snapshot.
-        if (actual) reconcileNotificationTopics(topicsRef.current);
+        // /api/notifications/device-token. Reads subscribedTopicsRef rather
+        // than the subscribedTopicsInitial prop directly, since this can run
+        // again long after mount, after the customer's own in-session
+        // toggle changes have moved `subscribedTopics` away from that
+        // initial snapshot.
+        if (actual) reconcileNotificationTopics(subscribedTopicsRef.current, topicsCatalog);
         // Learns whether THIS device already has notificationsEnabled set
         // (SRS FR-2.9) - a no-op if OS/browser permission was never
         // granted, in which case there's no token to register and nothing
@@ -226,7 +220,7 @@ export function SettingsToggles({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", refreshPermissionState);
     };
-    // This effect is deliberately mount-only (see topicsRef/
+    // This effect is deliberately mount-only (see subscribedTopicsRef/
     // notificationsEnabledRef above for the same reasoning) - adding
     // ensureDeviceToken here would re-run the whole effect, re-attaching
     // listeners and re-running every permission check, on every render.
@@ -234,7 +228,7 @@ export function SettingsToggles({
     // handler in this file already reads via getStrategies(isNative)
     // outside of an effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notificationTopicsInitial, quietHoursInitial]);
+  }, [subscribedTopicsInitial, quietHoursInitial]);
 
   function closePrimer() {
     setActivePrimer(null);
@@ -364,7 +358,7 @@ export function SettingsToggles({
     // rather than waiting for a future mount to catch up. Native only - see
     // the comment in the mount effect above.
     if (isNative) {
-      reconcileNotificationTopics(topics);
+      reconcileNotificationTopics(subscribedTopics, topicsCatalog);
     }
     const device = await ensureDeviceToken();
     if (!device) {
@@ -375,11 +369,16 @@ export function SettingsToggles({
     if (!ok) setError("Couldn't save that notification setting - we'll keep retrying.");
   }
 
-  async function handleTopicToggle(category: NotificationCategory, next: boolean) {
+  async function handleTopicToggle(topicId: string, next: boolean) {
     setError(null);
-    if (isNative) {
+    // Only calls the native plugin when the matching catalog entry is one
+    // the native Android whitelist still recognises - a brand-new catalog
+    // topic with no native/FCM analogue has no on-device mirror to update
+    // (see lib/native-permissions.ts).
+    const topic = topicsCatalog.find((candidate) => candidate._id === topicId);
+    if (isNative && topic?.nativeAndroidTopic) {
       try {
-        await NotificationTopics[next ? "subscribe" : "unsubscribe"]({ category });
+        await NotificationTopics[next ? "subscribe" : "unsubscribe"]({ category: topicId });
       } catch {
         setError("Couldn't update that notification setting. Try again.");
         return;
@@ -389,9 +388,11 @@ export function SettingsToggles({
     // the background - see lib/settings-sync.ts. For a web device, the
     // actual FCM (un)subscription happens server-side as part of that POST
     // - see /api/notifications/topics.
-    setTopics((prev) => ({ ...prev, [category]: next }));
-    const ok = await writeSettingOptimistically(`topic:${category}`, "/api/notifications/topics", {
-      category,
+    setSubscribedTopics((prev) =>
+      next ? (prev.includes(topicId) ? prev : [...prev, topicId]) : prev.filter((id) => id !== topicId),
+    );
+    const ok = await writeSettingOptimistically(`topic:${topicId}`, "/api/notifications/topics", {
+      topicId,
       enabled: next,
     });
     if (!ok) setError("Couldn't save that notification setting - we'll keep retrying.");
@@ -445,38 +446,32 @@ export function SettingsToggles({
         onChange={handleNotificationToggle}
       />
       {/*
-        Captions below are customer-facing copy - DRAFT, needs Compliance
-        sign-off before ship (financial promotion under FOGIL's FCA
-        authorisation), particularly Promotions/Feeds which are
-        marketing-adjacent. This also covers the Quiet hours copy further
-        below - it's scheduling UX rather than marketing content, but is
-        still customer-facing text needing sign-off before use. Its wording
+        displayName/description below come from the notification_topics
+        catalog document (lib/notification-topics-catalog.ts) - that
+        document is now the actual financial-promotion surface: it's
+        customer-facing copy, DRAFT, needs Compliance sign-off before any
+        wording ships (financial promotion under FOGIL's FCA authorisation),
+        particularly non-essentials topics which are marketing-adjacent.
+        This also covers the Quiet hours copy further below - it's
+        scheduling UX rather than marketing content, but is still
+        customer-facing text needing sign-off before use. Its wording
         deliberately says "reminder notifications", not "notifications" -
         quiet hours only gates the per-user journey-reminder push, not the
-        Promotions/Feeds broadcasts above, which are sent to every
-        subscribed device in one topic-wide call with no way to hold back
-        an individual recipient's copy.
+        catalog-topic broadcasts above, which are sent to every subscribed
+        device in one topic-wide call with no way to hold back an
+        individual recipient's copy.
       */}
       {notificationsEnabled && (
         <div className="ml-6 flex flex-col border-l border-slate-800 pl-4">
-          <Toggle
-            label="Essentials"
-            caption="Claims updates, policy and renewal reminders."
-            checked={topics.essentials}
-            onChange={(next) => handleTopicToggle("essentials", next)}
-          />
-          <Toggle
-            label="Promotions"
-            caption="Offers and marketing updates."
-            checked={topics.promotions}
-            onChange={(next) => handleTopicToggle("promotions", next)}
-          />
-          <Toggle
-            label="Feeds"
-            caption="Travel tips and destination content."
-            checked={topics.feeds}
-            onChange={(next) => handleTopicToggle("feeds", next)}
-          />
+          {topicsCatalog.map((topic) => (
+            <Toggle
+              key={topic._id}
+              label={topic.displayName}
+              caption={topic.description}
+              checked={subscribedTopics.includes(topic._id)}
+              onChange={(next) => handleTopicToggle(topic._id, next)}
+            />
+          ))}
         </div>
       )}
       <Toggle

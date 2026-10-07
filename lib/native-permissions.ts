@@ -40,22 +40,24 @@ interface BiometricPrimerPlugin {
 }
 
 /**
- * Categories a user can opt into from Settings. The plugin only ever takes a
- * category, never a topic string: the native side builds the real FCM topic
- * as this install's own brand_id plus the category (see
- * NotificationTopicsPlugin in fog-mobile-app), so the web side never needs
- * to know or choose which brand's topic it's touching.
+ * category is a catalog topic id (notification_topics._id, e.g.
+ * "essentials") - no longer a closed union here. The native Java side keeps
+ * its own hardcoded 3-value whitelist (NotificationTopicsPlugin in
+ * fog-mobile-app) and is the actual security boundary: every registered
+ * Capacitor plugin method is callable from any WebView frame, including a
+ * hostile third-party iframe, so a catalog id the native whitelist doesn't
+ * recognise is simply rejected on-device, not trusted from here. The plugin
+ * builds the real FCM topic as this install's own brand_id plus the
+ * category, so the web side never needs to know or choose which brand's
+ * topic it's touching.
  */
-export const NOTIFICATION_CATEGORIES = ["essentials", "promotions", "feeds"] as const;
-export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
-
 export interface TopicSubscriptionResult {
   subscribed: boolean;
 }
 
 interface NotificationTopicsPlugin {
-  subscribe(options: { category: NotificationCategory }): Promise<TopicSubscriptionResult>;
-  unsubscribe(options: { category: NotificationCategory }): Promise<TopicSubscriptionResult>;
+  subscribe(options: { category: string }): Promise<TopicSubscriptionResult>;
+  unsubscribe(options: { category: string }): Promise<TopicSubscriptionResult>;
 }
 
 export interface PushTokenResult {

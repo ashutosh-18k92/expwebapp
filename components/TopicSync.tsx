@@ -3,23 +3,29 @@
 import { useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
 import { reconcileNotificationTopics } from "@/lib/reconcile-notification-topics";
-import type { NotificationTopicPreferences } from "@/components/SettingsToggles";
+import type { NotificationTopicCatalogEntry } from "@/lib/notification-topics-catalog";
 
 /**
- * No UI. Applies the signed-in user's persisted notification-category
- * preferences to this device's FCM subscriptions once per mount. Settings
- * is the source of truth for those preferences, but a reinstall, a new
- * device, or an FCM token rotation resets the device's actual subscriptions
- * to nothing without touching the saved preference in Mongo - previously
- * that mismatch only got fixed the next time someone opened the Settings
+ * No UI. Applies the signed-in user's persisted subscribedTopics to this
+ * device's FCM subscriptions once per mount. Settings is the source of
+ * truth for those preferences, but a reinstall, a new device, or an FCM
+ * token rotation resets the device's actual subscriptions to nothing
+ * without touching the saved preference in Mongo - previously that
+ * mismatch only got fixed the next time someone opened the Settings
  * screen. Mounting this on the dashboard (the page every sign-in and every
  * app open with an existing session lands on) closes that gap.
  */
-export function TopicSync({ notificationTopics }: { notificationTopics: NotificationTopicPreferences }) {
+export function TopicSync({
+  subscribedTopics,
+  topicsCatalog,
+}: {
+  subscribedTopics: string[];
+  topicsCatalog: NotificationTopicCatalogEntry[];
+}) {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    reconcileNotificationTopics(notificationTopics);
-  }, [notificationTopics]);
+    reconcileNotificationTopics(subscribedTopics, topicsCatalog);
+  }, [subscribedTopics, topicsCatalog]);
 
   return null;
 }

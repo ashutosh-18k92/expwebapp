@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
-import { getDb, type DeviceDoc } from "@/lib/db";
+import { getDb, getNotificationTopicsCatalog, type DeviceDoc } from "@/lib/db";
+import { defaultSubscribedTopicIds } from "@/lib/notification-topics-catalog";
 import { getCurrentUser } from "@/lib/auth/session";
 import { reconcileNewWebDevice } from "@/lib/notification-topics-admin";
-
-// Defensive default for a user doc predating preferences.notificationTopics.
-const DEFAULT_NOTIFICATION_TOPICS = { essentials: true, promotions: false, feeds: false };
 
 function isPlatform(value: unknown): value is DeviceDoc["platform"] {
   return value === "native" || value === "web";
@@ -49,7 +47,8 @@ export async function POST(request: Request) {
   // whatever this account already has turned on. Native subscribes itself
   // on-device, so this only matters for web.
   if (isNewDevice && platform === "web") {
-    await reconcileNewWebDevice(user._id, user.preferences?.notificationTopics ?? DEFAULT_NOTIFICATION_TOPICS);
+    const topicsCatalog = await getNotificationTopicsCatalog(db);
+    await reconcileNewWebDevice(user._id, user.preferences?.subscribedTopics ?? defaultSubscribedTopicIds(topicsCatalog));
   }
 
   return NextResponse.json({ ok: true, notificationsEnabled: device?.notificationsEnabled === true });

@@ -1,6 +1,6 @@
 import { getMessaging } from "firebase-admin/messaging";
 import { initFirebaseAdmin } from "@/lib/firebase-admin";
-import { getDb, type DeviceDoc, type NotificationTopicPreferences } from "@/lib/db";
+import { getDb, type DeviceDoc } from "@/lib/db";
 import { BRAND_ID } from "@/lib/brand";
 
 initFirebaseAdmin();
@@ -49,11 +49,14 @@ export async function reconcileWebDevicesForCategory(
   }
 }
 
-/** Reconciles every currently-enabled category to one newly (re-)registered web device. */
-export async function reconcileNewWebDevice(
-  userId: string,
-  notificationTopics: NotificationTopicPreferences,
-): Promise<void> {
-  const categories = Object.entries(notificationTopics).filter(([, enabled]) => enabled);
-  await Promise.all(categories.map(([category]) => reconcileWebDevicesForCategory(userId, category, true)));
+/**
+ * Reconciles every currently-subscribed topic to one newly (re-)registered
+ * web device. Covers every catalog topic the account is subscribed to, not
+ * just the natively-mapped subset - this is server-side Admin SDK code with
+ * no WebView-frame exposure, so the native security boundary (see
+ * lib/native-permissions.ts) doesn't apply here, and one uniform code path
+ * is simpler than branching to mirror a constraint that doesn't apply.
+ */
+export async function reconcileNewWebDevice(userId: string, subscribedTopics: string[]): Promise<void> {
+  await Promise.all(subscribedTopics.map((topicId) => reconcileWebDevicesForCategory(userId, topicId, true)));
 }

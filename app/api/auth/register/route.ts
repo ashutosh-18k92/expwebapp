@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { emailCollation, getDb, type UserDoc } from "@/lib/db";
+import { emailCollation, getDb, getNotificationTopicsCatalog, type UserDoc } from "@/lib/db";
+import { defaultSubscribedTopicIds } from "@/lib/notification-topics-catalog";
 import { hashPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
 
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
 
   const { hash, salt } = hashPassword(password);
   const id = randomUUID();
+  const topicsCatalog = await getNotificationTopicsCatalog(db);
 
   try {
     await users.insertOne({
@@ -52,7 +54,7 @@ export async function POST(request: Request) {
       firstName,
       dateOfBirth: parsedDateOfBirth,
       preferences: {
-        notificationTopics: { essentials: true, promotions: false, feeds: false },
+        subscribedTopics: defaultSubscribedTopicIds(topicsCatalog),
       },
       createdAt: new Date(),
     });
