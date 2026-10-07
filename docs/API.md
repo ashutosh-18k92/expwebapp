@@ -116,7 +116,7 @@ Errors:
 - `400`: invalid email format, password under 8 characters, empty first name, or `dateOfBirth` not in `YYYY-MM-DD` / not a parseable date
 - `409`: an account with that email already exists (checked case-insensitively via a MongoDB collation, and again as a fallback on the unique-index duplicate-key error)
 
-Side effects: inserts a `users` document with `preferences.subscribedTopics` seeded from the `notification_topics` catalog's `defaultSubscribed` entries; creates a session (see 2.2/2.3 for TTL).
+Side effects: inserts a `users` document, plus a `user_preferences` document (`subscribedTopics` seeded from the `notification_topics` catalog's `defaultSubscribed` entries); creates a session (see 2.2/2.3 for TTL).
 
 File: `app/api/auth/register/route.ts`
 
@@ -239,7 +239,7 @@ Response `200`: `{ "ok": true, "notificationsEnabled": boolean }`, the device's 
 
 Errors: `400` for a missing/empty token or an invalid platform value.
 
-Side effect: if this token was not previously registered and `platform` is `"web"`, subscribes it (via the Firebase Admin SDK) to the FCM topic for every topic id currently in the account's `preferences.subscribedTopics`. Native devices subscribe themselves client-side and are not touched by this.
+Side effect: if this token was not previously registered and `platform` is `"web"`, subscribes it (via the Firebase Admin SDK) to the FCM topic for every topic id currently in the account's `user_preferences.subscribedTopics`. Native devices subscribe themselves client-side and are not touched by this.
 
 File: `app/api/notifications/device-token/route.ts`
 
@@ -271,7 +271,7 @@ Request:
 
 Response `200`: `{ "ok": true }`. Errors: `400` on a missing/malformed field.
 
-Note: this is a full replace of `UserDoc.preferences.quietHours` (`$set`), not a partial update. `startTime`/`endTime` are stored as local wall-clock strings; the time zone they're evaluated against is a separate field (`UserDoc.timeZone`, next endpoint), read independently by `fog-push-notification-service` at send time.
+Note: this is a full replace of `UserPreferencesDoc.quietHours` (`$set`, upserted), not a partial update. `startTime`/`endTime` are stored as local wall-clock strings; the time zone they're evaluated against is a separate field (`UserDoc.timeZone`, next endpoint), read independently by `fog-push-notification-service` at send time.
 
 File: `app/api/notifications/quiet-hours/route.ts`
 
@@ -307,7 +307,7 @@ Request:
 
 Response `200`: `{ "ok": true }`. Errors: `400` unknown `topicId` or non-boolean `enabled`.
 
-Side effect: adds/removes `topicId` from `preferences.subscribedTopics` (`$addToSet`/`$pull`), then subscribes/unsubscribes every `platform: "web"` device on this account to/from the brand-scoped FCM topic for that id (Admin SDK). Native devices manage their own subscription client-side (only for topics the native app recognises) and are not touched by this route.
+Side effect: adds/removes `topicId` from `user_preferences.subscribedTopics` (`$addToSet`/`$pull`, upserted), then subscribes/unsubscribes every `platform: "web"` device on this account to/from the brand-scoped FCM topic for that id (Admin SDK). Native devices manage their own subscription client-side (only for topics the native app recognises) and are not touched by this route.
 
 File: `app/api/notifications/topics/route.ts`
 
@@ -360,13 +360,17 @@ interface UserDoc {
   passwordSalt: string;
   firstName?: string;             // optional only because pre-existing accounts predate it
   dateOfBirth?: Date;              // UTC midnight
-  preferences: {
-    subscribedTopics: string[];     // ids from the notification_topics catalog, below
-    quietHours?: { enabled: boolean; startTime: string; endTime: string }; // "HH:mm" local wall-clock
-  };
   timeZone?: string;               // IANA identifier
   createdAt: Date;
   lastLoginAt?: Date;
+}
+
+interface UserPreferencesDoc {
+  _id: string;                    // the owning user's _id - one doc per user
+  subscribedTopics: string[];     // ids from the notification_topics catalog, below
+  quietHours?: { enabled: boolean; startTime: string; endTime: string }; // "HH:mm" local wall-clock
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface NotificationTopicDoc {

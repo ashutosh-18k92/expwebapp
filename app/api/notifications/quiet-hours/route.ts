@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb, type UserDoc } from "@/lib/db";
+import { getDb, type UserPreferencesDoc } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/session";
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -27,9 +27,15 @@ export async function POST(request: Request) {
   }
 
   const db = await getDb();
-  await db
-    .collection<UserDoc>("users")
-    .updateOne({ _id: user._id }, { $set: { "preferences.quietHours": { enabled, startTime, endTime } } });
+  const now = new Date();
+  await db.collection<UserPreferencesDoc>("user_preferences").updateOne(
+    { _id: user._id },
+    {
+      $set: { quietHours: { enabled, startTime, endTime }, updatedAt: now },
+      $setOnInsert: { createdAt: now },
+    },
+    { upsert: true },
+  );
 
   return NextResponse.json({ ok: true });
 }

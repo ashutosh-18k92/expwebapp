@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { Settings, User, ArrowLeftRight, Plane, FileText } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getDb, getNotificationTopicsCatalog } from "@/lib/db";
+import { getDb, getNotificationTopicsCatalog, getUserPreferences } from "@/lib/db";
 import { defaultSubscribedTopicIds } from "@/lib/notification-topics-catalog";
 import { NotificationBell } from "@/components/NotificationBell";
 import { DeviceTokenSync } from "@/components/DeviceTokenSync";
@@ -17,12 +17,13 @@ export default async function DashboardPage() {
   }
   const db = await getDb();
   const topicsCatalog = await getNotificationTopicsCatalog(db);
+  const preferences = await getUserPreferences(db, user._id);
 
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-5 p-6">
       <DeviceTokenSync />
       <TopicSync
-        subscribedTopics={user.preferences?.subscribedTopics ?? defaultSubscribedTopicIds(topicsCatalog)}
+        subscribedTopics={preferences?.subscribedTopics ?? defaultSubscribedTopicIds(topicsCatalog)}
         topicsCatalog={topicsCatalog}
       />
       <TimeZoneSync />

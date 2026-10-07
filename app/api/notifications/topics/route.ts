@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb, getNotificationTopicsCatalog, type NotificationTopicDoc, type UserDoc } from "@/lib/db";
+import { getDb, getNotificationTopicsCatalog, type NotificationTopicDoc, type UserPreferencesDoc } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { reconcileWebDevicesForCategory } from "@/lib/notification-topics-admin";
 
@@ -36,12 +36,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Unknown topicId "${topicId}".` }, { status: 400 });
   }
 
-  await db
-    .collection<UserDoc>("users")
-    .updateOne(
-      { _id: user._id },
-      enabled ? { $addToSet: { "preferences.subscribedTopics": topicId } } : { $pull: { "preferences.subscribedTopics": topicId } },
-    );
+  const now = new Date();
+  await db.collection<UserPreferencesDoc>("user_preferences").updateOne(
+    { _id: user._id },
+    {
+      ...(enabled ? { $addToSet: { subscribedTopics: topicId } } : { $pull: { subscribedTopics: topicId } }),
+      $set: { updatedAt: now },
+      $setOnInsert: { createdAt: now },
+    },
+    { upsert: true },
+  );
 
   // Native subscribes/unsubscribes itself client-side (see
   // NotificationTopics in lib/native-permissions.ts) - this only ever

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { emailCollation, getDb, getNotificationTopicsCatalog, type UserDoc } from "@/lib/db";
+import { emailCollation, getDb, getNotificationTopicsCatalog, type UserDoc, type UserPreferencesDoc } from "@/lib/db";
 import { defaultSubscribedTopicIds } from "@/lib/notification-topics-catalog";
 import { hashPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
@@ -53,9 +53,6 @@ export async function POST(request: Request) {
       passwordSalt: salt,
       firstName,
       dateOfBirth: parsedDateOfBirth,
-      preferences: {
-        subscribedTopics: defaultSubscribedTopicIds(topicsCatalog),
-      },
       createdAt: new Date(),
     });
   } catch (error) {
@@ -64,6 +61,14 @@ export async function POST(request: Request) {
     }
     throw error;
   }
+
+  const now = new Date();
+  await db.collection<UserPreferencesDoc>("user_preferences").insertOne({
+    _id: id,
+    subscribedTopics: defaultSubscribedTopicIds(topicsCatalog),
+    createdAt: now,
+    updatedAt: now,
+  });
 
   await createSession(id);
 

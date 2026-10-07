@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb, getNotificationTopicsCatalog, type DeviceDoc } from "@/lib/db";
+import { getDb, getNotificationTopicsCatalog, getUserPreferences, type DeviceDoc } from "@/lib/db";
 import { defaultSubscribedTopicIds } from "@/lib/notification-topics-catalog";
 import { getCurrentUser } from "@/lib/auth/session";
 import { reconcileNewWebDevice } from "@/lib/notification-topics-admin";
@@ -48,7 +48,8 @@ export async function POST(request: Request) {
   // on-device, so this only matters for web.
   if (isNewDevice && platform === "web") {
     const topicsCatalog = await getNotificationTopicsCatalog(db);
-    await reconcileNewWebDevice(user._id, user.preferences?.subscribedTopics ?? defaultSubscribedTopicIds(topicsCatalog));
+    const preferences = await getUserPreferences(db, user._id);
+    await reconcileNewWebDevice(user._id, preferences?.subscribedTopics ?? defaultSubscribedTopicIds(topicsCatalog));
   }
 
   return NextResponse.json({ ok: true, notificationsEnabled: device?.notificationsEnabled === true });

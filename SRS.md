@@ -164,6 +164,8 @@ Note: customer-facing copy is DRAFT and requires Compliance sign-off before use,
 
 Files: `app/api/notifications/quiet-hours`
 
+Note (2026-10-07): `subscribedTopics`/`quietHours` moved out of `UserDoc.preferences` into their own `user_preferences` collection, keyed by the owning user's `_id` (`UserPreferencesDoc`, `lib/db.ts`) - one more step in the same direction as FR-2.9's per-device split, giving account-wide settings their own dedicated place instead of a nested field with no shared read/write accessor. `timeZone` stayed on `UserDoc`, unchanged - it was never part of that nested group (see `lib/db.ts`'s own comment on `UserDoc.timeZone` for why: a detected fact about the device last used, not a customer choice). A one-off `scripts/split-user-preferences.mjs` moved the dev database's existing accounts across, was run once against it, confirmed correct by reading the migrated documents back, and was then deleted - kept here as the record of how that data got to its current shape, not as a script anyone still needs to run.
+
 ### FR-2.3 Topic subscription reconciliation
 
 Status: Implemented
@@ -265,7 +267,7 @@ Note (2026-09-18, same day, second revision): the direct consequence of the abov
 
 Note (2026-09-18, third revision): the reconciliation bullet above was found, on code review, to have a race: `refreshPermissionState`'s notification branch and `ensureDeviceToken()` each resolve independently (a native permission-bridge round trip versus an HTTP round trip), in no guaranteed order, and the reconciliation check originally read `notificationsEnabledRef`/`deviceTokenRef` - React refs kept in sync with state via a separate `useEffect`, which is not guaranteed to have run yet immediately after an `await` resolves. `ensureDeviceToken()` was changed to return `{ token, notificationsEnabled }` directly from whichever branch resolves it (the cached-token short-circuit, or the freshly-awaited `registerDevice()` response), and the reconciliation check now reads that returned value instead of the refs. This fix has not been verified end to end against a real permission revoke on device or emulator - see the note on device-testing topology in Section 13.
 
-Files: `lib/db.ts` (`DeviceDoc.notificationsEnabled`, `UserDoc.preferences`), `app/api/notifications/enabled/route.ts`, `app/api/notifications/device-token/route.ts`, `lib/register-device.ts` (new), `app/api/notifications/topics/route.ts`, `app/api/notifications/quiet-hours/route.ts`, `app/api/auth/register/route.ts`, `app/settings/page.tsx`, `app/dashboard/page.tsx`, `components/SettingsToggles.tsx`, `components/DeviceTokenSync.tsx`. `scripts/migrate-user-preferences.mjs` did the one-off data migration and was deleted once run and verified - see the note above.
+Files: `lib/db.ts` (`DeviceDoc.notificationsEnabled`, `UserPreferencesDoc`), `app/api/notifications/enabled/route.ts`, `app/api/notifications/device-token/route.ts`, `lib/register-device.ts` (new), `app/api/notifications/topics/route.ts`, `app/api/notifications/quiet-hours/route.ts`, `app/api/auth/register/route.ts`, `app/settings/page.tsx`, `app/dashboard/page.tsx`, `components/SettingsToggles.tsx`, `components/DeviceTokenSync.tsx`. `scripts/migrate-user-preferences.mjs` did the one-off data migration and was deleted once run and verified - see the note above.
 
 ---
 

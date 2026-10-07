@@ -42,8 +42,8 @@ async function ensureIndexes(db: Db): Promise<void> {
     db.collection("policies").createIndex({ userId: 1 }),
     // Multikey index (Mongo builds this automatically for an array field) -
     // serves the array-membership filter fog-push-notification-service runs
-    // per catalog topic (preferences.subscribedTopics: topicId).
-    db.collection("users").createIndex({ "preferences.subscribedTopics": 1 }),
+    // per catalog topic (subscribedTopics: topicId).
+    db.collection("user_preferences").createIndex({ subscribedTopics: 1 }),
   ]);
 }
 
@@ -71,6 +71,16 @@ export async function getNotificationTopicsCatalog(db: Db): Promise<Notification
   return db.collection<NotificationTopicDoc>("notification_topics").find({}).sort({ sortOrder: 1 }).toArray();
 }
 
+/**
+ * Shared helper so "this account's settings" is one Mongo call reused by
+ * every caller (the topics/quiet-hours/device-token routes, the
+ * settings/dashboard pages) instead of each one hand-rolling its own query
+ * against the user_preferences collection.
+ */
+export async function getUserPreferences(db: Db, userId: string): Promise<UserPreferencesDoc | null> {
+  return db.collection<UserPreferencesDoc>("user_preferences").findOne({ _id: userId });
+}
+
 export interface NotificationTopicDoc extends NotificationTopicCatalogEntry {
   cron: string; // consumed by fog-push-notification-service's scheduler
   enabled: boolean; // gates whether the broadcast job is scheduled (replaces ENABLE_<BRAND>_<CATEGORY>_BROADCAST_JOB)
@@ -87,11 +97,16 @@ export interface QuietHoursSettings {
 
 // Account-wide preferences - the same across every device a customer uses,
 // unlike DeviceDoc.notificationsEnabled below, which each registered device
-// tracks separately. Nested under UserDoc.preferences rather than kept as
-// flat top-level fields, so this account-level group reads as one thing.
-export interface UserPreferences {
+// tracks separately. Its own collection, keyed by the owning user's _id
+// (same "_id as the natural key" convention as DeviceDoc._id being the push
+// token), rather than nested on UserDoc - this is where any future setting
+// belongs too, instead of a new inline query per call site.
+export interface UserPreferencesDoc {
+  _id: string;
   subscribedTopics: string[];
   quietHours?: QuietHoursSettings;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface UserDoc {
@@ -115,12 +130,14 @@ export interface UserDoc {
   // moved to DeviceDoc.notificationsEnabled (2026-09-18) once it became
   // clear it needed to be a per-device setting, not an account-wide one: a
   // customer can have this on for their phone and off for their browser.
-  preferences: UserPreferences;
+  // Account-wide settings (subscribedTopics, quietHours) live in their own
+  // user_preferences collection (UserPreferencesDoc, same file) instead of
+  // nested here - see getUserPreferences.
   // IANA identifier, e.g. "Europe/London" - kept current by a client-side
   // sync on every app open (see components/TimeZoneSync.tsx), independent
-  // of whether quietHours is enabled. Deliberately not nested under
-  // preferences above - unlike subscribedTopics/quietHours this isn't a
-  // customer choice, just a detected fact about the device last used.
+  // of whether quietHours is enabled. Deliberately not grouped with
+  // user_preferences above - unlike subscribedTopics/quietHours this isn't
+  // a customer choice, just a detected fact about the device last used.
   timeZone?: string;
   createdAt: Date;
   // Literal last app-open time - set on login/register and again on every
